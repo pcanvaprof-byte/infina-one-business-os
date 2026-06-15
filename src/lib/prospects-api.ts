@@ -253,7 +253,7 @@ export async function applyImport(
   if (toInsert.length) {
     const { error, count } = await supabase
       .from("prospects")
-      .insert(toInsert, { count: "exact" });
+      .insert(toInsert as never, { count: "exact" });
     if (error) {
       result.errors.push({ row: 0, message: `Inserção: ${error.message}` });
     } else {
@@ -262,7 +262,7 @@ export async function applyImport(
   }
 
   for (const u of updates) {
-    const { error } = await supabase.from("prospects").update(u.patch).eq("id", u.id);
+    const { error } = await supabase.from("prospects").update(u.patch as never).eq("id", u.id);
     if (error) result.errors.push({ row: 0, message: `Atualização ${u.id}: ${error.message}` });
     else result.updated++;
   }
