@@ -37,7 +37,7 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, enabled: true },
   { to: "/crm", label: "CRM Comercial", icon: Users, enabled: true },
   { to: "/prospeccao", label: "Prospecção", icon: Search, enabled: true },
-  { to: "/metas", label: "Metas", icon: Target, enabled: false },
+  { to: "/metas", label: "Metas", icon: Target, enabled: true },
   { to: "/tarefas", label: "Tarefas", icon: ListChecks, enabled: false },
   { to: "/propostas", label: "Propostas", icon: FileText, enabled: false },
   { to: "/indicacoes", label: "Indicações", icon: Share2, enabled: false },
