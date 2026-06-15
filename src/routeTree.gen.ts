@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ProspeccaoRouteImport } from './routes/prospeccao'
+import { Route as MetasRouteImport } from './routes/metas'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CrmRouteImport } from './routes/crm'
@@ -18,6 +19,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const ProspeccaoRoute = ProspeccaoRouteImport.update({
   id: '/prospeccao',
   path: '/prospeccao',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MetasRoute = MetasRouteImport.update({
+  id: '/metas',
+  path: '/metas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -46,6 +52,7 @@ export interface FileRoutesByFullPath {
   '/crm': typeof CrmRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/metas': typeof MetasRoute
   '/prospeccao': typeof ProspeccaoRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/crm': typeof CrmRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/metas': typeof MetasRoute
   '/prospeccao': typeof ProspeccaoRoute
 }
 export interface FileRoutesById {
@@ -61,14 +69,22 @@ export interface FileRoutesById {
   '/crm': typeof CrmRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/metas': typeof MetasRoute
   '/prospeccao': typeof ProspeccaoRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/crm' | '/dashboard' | '/login' | '/prospeccao'
+  fullPaths: '/' | '/crm' | '/dashboard' | '/login' | '/metas' | '/prospeccao'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/crm' | '/dashboard' | '/login' | '/prospeccao'
-  id: '__root__' | '/' | '/crm' | '/dashboard' | '/login' | '/prospeccao'
+  to: '/' | '/crm' | '/dashboard' | '/login' | '/metas' | '/prospeccao'
+  id:
+    | '__root__'
+    | '/'
+    | '/crm'
+    | '/dashboard'
+    | '/login'
+    | '/metas'
+    | '/prospeccao'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -76,6 +92,7 @@ export interface RootRouteChildren {
   CrmRoute: typeof CrmRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
+  MetasRoute: typeof MetasRoute
   ProspeccaoRoute: typeof ProspeccaoRoute
 }
 
@@ -86,6 +103,13 @@ declare module '@tanstack/react-router' {
       path: '/prospeccao'
       fullPath: '/prospeccao'
       preLoaderRoute: typeof ProspeccaoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/metas': {
+      id: '/metas'
+      path: '/metas'
+      fullPath: '/metas'
+      preLoaderRoute: typeof MetasRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -124,6 +148,7 @@ const rootRouteChildren: RootRouteChildren = {
   CrmRoute: CrmRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
+  MetasRoute: MetasRoute,
   ProspeccaoRoute: ProspeccaoRoute,
 }
 export const routeTree = rootRouteImport
