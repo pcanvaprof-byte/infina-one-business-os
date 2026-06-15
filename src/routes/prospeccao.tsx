@@ -436,15 +436,19 @@ function ProspeccaoPage() {
     const idx = (...needles: string[]) =>
       headers.findIndex((h) => needles.some((n) => h.includes(n)));
 
-    // Mapeamento alinhado à planilha modelo (Nome Fantasia, Telefone, Razão Social, CNPJ,
-    // Atividade Principal - Texto, Municipio, UF, Quadro Societário, etc.)
     const iFantasia = idx("nome fantasia", "fantasia");
     const iRazao = idx("razao social", "razao");
     const iEmpresa = idx("empresa");
     const iCompany = iFantasia >= 0 ? iFantasia : iEmpresa >= 0 ? iEmpresa : iRazao;
-    if (iCompany < 0) return toast.error("Cabeçalho 'Nome Fantasia' / 'Razão Social' / 'Empresa' não encontrado");
+    if (iCompany < 0) {
+      return toast.error(
+        `Cabeçalho não reconhecido. Esperado: ${EXPECTED_HEADERS.join(", ")}`,
+        { duration: 8000 },
+      );
+    }
 
     const f = {
+      cnpj: idx("cnpj"),
       segmento: idx("atividade principal - texto", "atividade principal", "segmento", "setor", "ramo", "atividade"),
       responsavel: idx("respons", "consultor", "owner", "quadro societ"),
       whatsapp: idx("whatsapp", "whats", "celular"),
@@ -457,18 +461,16 @@ function ProspeccaoPage() {
       potencial: idx("potencial", "score", "porte"),
     };
 
-    const novos: Prospect[] = [];
+    const previews: PreviewRow[] = [];
     for (let i = 1; i < rows.length; i++) {
       const c = rows[i];
       const fantasia = iFantasia >= 0 ? c[iFantasia] : "";
       const razao = iRazao >= 0 ? c[iRazao] : "";
       const rawCompany = (fantasia || razao || c[iCompany] || "").trim();
-      if (!rawCompany) continue;
-      const company = toTitleCase(rawCompany);
+      const errors: string[] = [];
 
       const telRaw = f.telefone >= 0 ? c[f.telefone] || "" : "";
       const waRaw = f.whatsapp >= 0 ? c[f.whatsapp] || "" : "";
-      // Quando só há "Telefone": números móveis (DDD + 9...) viram WhatsApp
       let whatsapp = formatBrPhone(waRaw);
       let phone = formatBrPhone(telRaw);
       if (!whatsapp && telRaw && isMobile(telRaw)) { whatsapp = phone; phone = ""; }
@@ -479,30 +481,71 @@ function ProspeccaoPage() {
 
       const segRaw = f.segmento >= 0 ? (c[f.segmento] || "").trim() : "";
       const pot = (f.potencial >= 0 ? (c[f.potencial] || "").toLowerCase() : "") as ProspectPotential;
+      const cnpjRaw = f.cnpj >= 0 ? onlyDigits(c[f.cnpj] || "") : "";
 
-      novos.push({
-        id: newId(),
-        company,
-        segment: segRaw ? segRaw.charAt(0).toUpperCase() + segRaw.slice(1).toLowerCase() : "Outros",
-        owner: (f.responsavel >= 0 ? c[f.responsavel] : "") || user.name,
-        whatsapp,
-        phone,
-        email: f.email >= 0 ? c[f.email] || "" : "",
-        instagram: f.instagram >= 0 ? c[f.instagram] || "" : "",
-        city: city ? toTitleCase(city) : "",
-        state,
-        source: (f.origem >= 0 ? c[f.origem] : "") || "Importação",
-        potential: POTENTIALS.includes(pot) ? pot : "medio",
-        status: "nao_contatado",
-        createdAt: "importado",
-        interactions: [],
+      if (!rawCompany) errors.push("Empresa vazia");
+
+      previews.push({
+        rowIndex: i + 1,
+        errors,
+        data: {
+          company: rawCompany ? toTitleCase(rawCompany) : "",
+          cnpj: cnpjRaw || undefined,
+          segment: segRaw ? segRaw.charAt(0).toUpperCase() + segRaw.slice(1).toLowerCase() : "Outros",
+          owner: (f.responsavel >= 0 ? c[f.responsavel] : "") || user.name,
+          whatsapp,
+          phone,
+          email: f.email >= 0 ? c[f.email] || "" : "",
+          instagram: f.instagram >= 0 ? c[f.instagram] || "" : "",
+          city: city ? toTitleCase(city) : "",
+          state,
+          source: (f.origem >= 0 ? c[f.origem] : "") || "Importação",
+          potential: POTENTIALS.includes(pot) ? pot : "medio",
+          status: "nao_contatado",
+        },
       });
     }
 
-    if (!novos.length) return toast.error("Nenhuma linha válida");
-    setProspects((prev) => [...novos, ...prev]);
-    toast.success(`${novos.length} empresa(s) importada(s)`);
+    // mark duplicates by CNPJ
+    const byCnpj = new Map<string, Prospect>();
+    for (const p of prospects) if (p.cnpj) byCnpj.set(p.cnpj, p);
+    for (const r of previews) {
+      if (r.data.cnpj) {
+        const m = byCnpj.get(r.data.cnpj);
+        if (m) r.matchId = m.id;
+      }
+    }
+
+    if (!previews.length) return toast.error("Nenhuma linha válida");
+    setPreviewRows(previews);
+    setPreviewFileName(file.name);
+    setPreviewOpen(true);
   };
+
+  const confirmImport = async () => {
+    try {
+      const result = await applyImport(previewRows, prospects);
+      await logImport({
+        fileName: previewFileName,
+        performedBy: user.name,
+        totalRows: previewRows.length,
+        result,
+      });
+      const fresh = await loadAllProspects();
+      setProspects(fresh);
+      setPreviewOpen(false);
+      setPreviewRows([]);
+      toast.success(
+        `Importação: ${result.inserted} novas, ${result.updated} atualizadas, ${result.skipped} ignoradas`,
+        { duration: 6000 },
+      );
+      if (result.errors.length) toast.error(`${result.errors.length} erro(s) registrados`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Erro: ${msg}`);
+    }
+  };
+
 
   const clearFilters = () => {
     setStatusFilter("all"); setSegmentFilter("all"); setStateFilter("all"); setPotentialFilter("all"); setSearch("");
