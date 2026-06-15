@@ -90,6 +90,26 @@ const POTENTIALS: ProspectPotential[] = ["alto", "medio", "baixo"];
 
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
 
+function formatBrPhone(raw: string): string {
+  const d = onlyDigits(raw);
+  if (!d) return "";
+  // remove leading country code 55 if 12-13 digits
+  const n = d.length >= 12 && d.startsWith("55") ? d.slice(2) : d;
+  if (n.length === 11) return `(${n.slice(0, 2)}) ${n.slice(2, 7)}-${n.slice(7)}`;
+  if (n.length === 10) return `(${n.slice(0, 2)}) ${n.slice(2, 6)}-${n.slice(6)}`;
+  if (n.length === 9) return `${n.slice(0, 5)}-${n.slice(5)}`;
+  if (n.length === 8) return `${n.slice(0, 4)}-${n.slice(4)}`;
+  return raw.trim();
+}
+function isMobile(raw: string): boolean {
+  const d = onlyDigits(raw);
+  const n = d.length >= 12 && d.startsWith("55") ? d.slice(2) : d;
+  return n.length === 11 && n[2] === "9";
+}
+function toTitleCase(s: string): string {
+  return s.toLowerCase().replace(/(^|\s|[\/\-])([a-zà-ú])/g, (_, p, c) => p + c.toUpperCase());
+}
+
 const UF_NAME_TO_CODE: Record<string, string> = {
   acre: "AC", alagoas: "AL", amapa: "AP", amazonas: "AM", bahia: "BA",
   ceara: "CE", "distrito federal": "DF", df: "DF", "espirito santo": "ES",
@@ -331,55 +351,101 @@ function ProspeccaoPage() {
   };
 
   const handleImport = async (file: File) => {
-    const text = await file.text();
-    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    if (lines.length < 2) return toast.error("CSV vazio");
-    const parseLine = (l: string): string[] => {
-      const out: string[] = []; let cur = "", inQ = false;
-      for (let i = 0; i < l.length; i++) {
-        const c = l[i];
-        if (c === '"') { if (inQ && l[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
-        else if (c === "," && !inQ) { out.push(cur); cur = ""; } else cur += c;
+    const ext = file.name.toLowerCase().split(".").pop() || "";
+    let rows: string[][] = [];
+    try {
+      if (ext === "xlsx" || ext === "xls") {
+        const XLSX = await import("xlsx");
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "", raw: false });
+        rows = aoa.map((r) => r.map((c) => (c == null ? "" : String(c).trim())));
+      } else {
+        const text = await file.text();
+        const parseLine = (l: string): string[] => {
+          const out: string[] = []; let cur = "", inQ = false;
+          for (let i = 0; i < l.length; i++) {
+            const c = l[i];
+            if (c === '"') { if (inQ && l[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+            else if ((c === "," || c === ";") && !inQ) { out.push(cur); cur = ""; } else cur += c;
+          }
+          out.push(cur); return out.map((s) => s.trim());
+        };
+        rows = text.split(/\r?\n/).filter((l) => l.trim().length > 0).map(parseLine);
       }
-      out.push(cur); return out.map((s) => s.trim());
-    };
-    const headers = parseLine(lines[0]).map((h) =>
-      h.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+    } catch (err) {
+      console.error(err);
+      return toast.error("Falha ao ler o arquivo");
+    }
+    if (rows.length < 2) return toast.error("Planilha vazia");
+
+    const headers = rows[0].map((h) =>
+      h.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim(),
     );
     const idx = (...needles: string[]) =>
       headers.findIndex((h) => needles.some((n) => h.includes(n)));
-    const iEmpresa = idx("empresa", "razao", "nome fantasia");
-    if (iEmpresa < 0) return toast.error("Cabeçalho 'Empresa' não encontrado");
+
+    // Mapeamento alinhado à planilha modelo (Nome Fantasia, Telefone, Razão Social, CNPJ,
+    // Atividade Principal - Texto, Municipio, UF, Quadro Societário, etc.)
+    const iFantasia = idx("nome fantasia", "fantasia");
+    const iRazao = idx("razao social", "razao");
+    const iEmpresa = idx("empresa");
+    const iCompany = iFantasia >= 0 ? iFantasia : iEmpresa >= 0 ? iEmpresa : iRazao;
+    if (iCompany < 0) return toast.error("Cabeçalho 'Nome Fantasia' / 'Razão Social' / 'Empresa' não encontrado");
+
     const f = {
-      segmento: idx("segmento", "setor", "ramo"),
-      responsavel: idx("respons", "consultor", "owner"),
-      whatsapp: idx("whats", "celular"),
+      segmento: idx("atividade principal - texto", "atividade principal", "segmento", "setor", "ramo", "atividade"),
+      responsavel: idx("respons", "consultor", "owner", "quadro societ"),
+      whatsapp: idx("whatsapp", "whats", "celular"),
       telefone: idx("telefone", "fone", "fixo"),
       email: idx("email", "e-mail"),
-      instagram: idx("instagram", "insta", "@"),
-      cidade: idx("cidade", "municipio"),
-      estado: idx("estado", "uf"),
+      instagram: idx("instagram", "insta"),
+      cidade: idx("municipio", "cidade"),
+      estado: idx("uf", "estado"),
       origem: idx("origem", "fonte"),
-      potencial: idx("potencial", "score"),
+      potencial: idx("potencial", "score", "porte"),
     };
+
     const novos: Prospect[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const c = parseLine(lines[i]);
-      const company = c[iEmpresa]; if (!company) continue;
-      const pot = (c[f.potencial] || "medio").toLowerCase() as ProspectPotential;
-      const cidadeRaw = (c[f.cidade] || "").trim();
-      const estadoRaw = (c[f.estado] || "").trim();
+    for (let i = 1; i < rows.length; i++) {
+      const c = rows[i];
+      const fantasia = iFantasia >= 0 ? c[iFantasia] : "";
+      const razao = iRazao >= 0 ? c[iRazao] : "";
+      const rawCompany = (fantasia || razao || c[iCompany] || "").trim();
+      if (!rawCompany) continue;
+      const company = toTitleCase(rawCompany);
+
+      const telRaw = f.telefone >= 0 ? c[f.telefone] || "" : "";
+      const waRaw = f.whatsapp >= 0 ? c[f.whatsapp] || "" : "";
+      // Quando só há "Telefone": números móveis (DDD + 9...) viram WhatsApp
+      let whatsapp = formatBrPhone(waRaw);
+      let phone = formatBrPhone(telRaw);
+      if (!whatsapp && telRaw && isMobile(telRaw)) { whatsapp = phone; phone = ""; }
+
+      const cidadeRaw = f.cidade >= 0 ? (c[f.cidade] || "").trim() : "";
+      const estadoRaw = f.estado >= 0 ? (c[f.estado] || "").trim() : "";
       const { city, state } = parseLocation(cidadeRaw, estadoRaw);
+
+      const segRaw = f.segmento >= 0 ? (c[f.segmento] || "").trim() : "";
+      const pot = (f.potencial >= 0 ? (c[f.potencial] || "").toLowerCase() : "") as ProspectPotential;
+
       novos.push({
-        id: newId(), company,
-        segment: c[f.segmento] || "Outros",
-        owner: c[f.responsavel] || user.name,
-        whatsapp: c[f.whatsapp] || "", phone: c[f.telefone] || "",
-        email: c[f.email] || "", instagram: c[f.instagram] || "",
-        city, state,
-        source: c[f.origem] || "Importação",
+        id: newId(),
+        company,
+        segment: segRaw ? segRaw.charAt(0).toUpperCase() + segRaw.slice(1).toLowerCase() : "Outros",
+        owner: (f.responsavel >= 0 ? c[f.responsavel] : "") || user.name,
+        whatsapp,
+        phone,
+        email: f.email >= 0 ? c[f.email] || "" : "",
+        instagram: f.instagram >= 0 ? c[f.instagram] || "" : "",
+        city: city ? toTitleCase(city) : "",
+        state,
+        source: (f.origem >= 0 ? c[f.origem] : "") || "Importação",
         potential: POTENTIALS.includes(pot) ? pot : "medio",
-        status: "nao_contatado", createdAt: "importado", interactions: [],
+        status: "nao_contatado",
+        createdAt: "importado",
+        interactions: [],
       });
     }
 
@@ -404,9 +470,9 @@ function ProspeccaoPage() {
             <Download className="mr-1.5 h-4 w-4" /> Exportar
           </Button>
           <Button variant="outline" className="h-9 text-xs" onClick={() => fileRef.current?.click()}>
-            <Upload className="mr-1.5 h-4 w-4" /> Importar CSV
+            <Upload className="mr-1.5 h-4 w-4" /> Importar
           </Button>
-          <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden"
+          <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,text/csv" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = ""; }} />
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
