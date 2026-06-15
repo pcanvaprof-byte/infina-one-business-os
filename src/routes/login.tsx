@@ -24,9 +24,9 @@ function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = login(email, password);
+    const res = await login(email, password);
     if (!res.ok) {
       toast.error(res.error);
       return;
@@ -35,9 +35,9 @@ function LoginPage() {
     navigate({ to: "/dashboard" });
   };
 
-  const quickLogin = (idx: number) => {
+  const quickLogin = async (idx: number) => {
     const a = SEED_ACCOUNTS[idx];
-    loginAs({ name: a.name, email: a.email, role: a.role });
+    await loginAs({ name: a.name, email: a.email, role: a.role });
     toast.success(`Entrando como ${a.name}…`);
     navigate({ to: "/dashboard" });
   };
