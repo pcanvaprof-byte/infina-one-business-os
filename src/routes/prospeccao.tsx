@@ -90,6 +90,42 @@ const POTENTIALS: ProspectPotential[] = ["alto", "medio", "baixo"];
 
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
 
+const UF_NAME_TO_CODE: Record<string, string> = {
+  acre: "AC", alagoas: "AL", amapa: "AP", amazonas: "AM", bahia: "BA",
+  ceara: "CE", "distrito federal": "DF", df: "DF", "espirito santo": "ES",
+  goias: "GO", maranhao: "MA", "mato grosso": "MT", "mato grosso do sul": "MS",
+  "minas gerais": "MG", para: "PA", paraiba: "PB", parana: "PR", pernambuco: "PE",
+  piaui: "PI", "rio de janeiro": "RJ", "rio grande do norte": "RN",
+  "rio grande do sul": "RS", rondonia: "RO", roraima: "RR", "santa catarina": "SC",
+  "sao paulo": "SP", sergipe: "SE", tocantins: "TO",
+};
+const VALID_UFS = new Set([
+  "AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO",
+]);
+function normalizeUf(raw: string): string {
+  const v = raw.trim().toUpperCase();
+  if (!v) return "";
+  if (v.length === 2 && VALID_UFS.has(v)) return v;
+  const key = raw.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return UF_NAME_TO_CODE[key] ?? (VALID_UFS.has(v.slice(0, 2)) ? v.slice(0, 2) : "");
+}
+function parseLocation(cityRaw: string, stateRaw: string): { city: string; state: string } {
+  let state = normalizeUf(stateRaw);
+  let city = cityRaw;
+  // tenta extrair UF embutida em "Joinville/SC", "Joinville - SC", "SC - Joinville", "Joinville (SC)"
+  if (!state) {
+    const m = city.match(/\b([A-Za-zÀ-ú]{2,})\s*[\/\-–|()]+\s*([A-Za-z]{2,})\b/);
+    if (m) {
+      const a = normalizeUf(m[1]); const b = normalizeUf(m[2]);
+      if (a && !b) { state = a; city = m[2]; }
+      else if (b && !a) { state = b; city = m[1]; }
+    }
+  }
+  city = city.replace(/[\/\-–|()]+\s*[A-Za-z]{2}\s*$/, "").replace(/^\s*[A-Za-z]{2}\s*[\/\-–|()]+/, "").trim();
+  return { city, state };
+}
+
+
 const INTERACTION_ICON: Record<InteractionKind, typeof MessageSquare> = {
   whatsapp: MessageSquare,
   ligacao: Phone,
