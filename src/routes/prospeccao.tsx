@@ -90,6 +90,26 @@ const POTENTIALS: ProspectPotential[] = ["alto", "medio", "baixo"];
 
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
 
+function formatBrPhone(raw: string): string {
+  const d = onlyDigits(raw);
+  if (!d) return "";
+  // remove leading country code 55 if 12-13 digits
+  const n = d.length >= 12 && d.startsWith("55") ? d.slice(2) : d;
+  if (n.length === 11) return `(${n.slice(0, 2)}) ${n.slice(2, 7)}-${n.slice(7)}`;
+  if (n.length === 10) return `(${n.slice(0, 2)}) ${n.slice(2, 6)}-${n.slice(6)}`;
+  if (n.length === 9) return `${n.slice(0, 5)}-${n.slice(5)}`;
+  if (n.length === 8) return `${n.slice(0, 4)}-${n.slice(4)}`;
+  return raw.trim();
+}
+function isMobile(raw: string): boolean {
+  const d = onlyDigits(raw);
+  const n = d.length >= 12 && d.startsWith("55") ? d.slice(2) : d;
+  return n.length === 11 && n[2] === "9";
+}
+function toTitleCase(s: string): string {
+  return s.toLowerCase().replace(/(^|\s|[\/\-])([a-zà-ú])/g, (_, p, c) => p + c.toUpperCase());
+}
+
 const UF_NAME_TO_CODE: Record<string, string> = {
   acre: "AC", alagoas: "AL", amapa: "AP", amazonas: "AM", bahia: "BA",
   ceara: "CE", "distrito federal": "DF", df: "DF", "espirito santo": "ES",
