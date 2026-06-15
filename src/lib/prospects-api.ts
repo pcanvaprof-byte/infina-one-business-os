@@ -130,7 +130,7 @@ export async function updateProspect(id: string, patch: Partial<Prospect>) {
   if (patch.source !== undefined) map.source = patch.source;
   if (patch.potential !== undefined) map.potential = patch.potential;
   if (patch.status !== undefined) map.status = patch.status;
-  const { error } = await supabase.from("prospects").update(map).eq("id", id);
+  const { error } = await supabase.from("prospects").update(map as never).eq("id", id);
   if (error) throw error;
 }
 
