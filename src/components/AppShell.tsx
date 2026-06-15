@@ -36,7 +36,7 @@ import {
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, enabled: true },
   { to: "/crm", label: "CRM Comercial", icon: Users, enabled: true },
-  { to: "/prospeccao", label: "Prospecção", icon: Search, enabled: false },
+  { to: "/prospeccao", label: "Prospecção", icon: Search, enabled: true },
   { to: "/metas", label: "Metas", icon: Target, enabled: false },
   { to: "/tarefas", label: "Tarefas", icon: ListChecks, enabled: false },
   { to: "/propostas", label: "Propostas", icon: FileText, enabled: false },
