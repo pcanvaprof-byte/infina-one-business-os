@@ -5,6 +5,8 @@ import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -29,19 +31,27 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Building2,
   CalendarPlus,
   CheckCircle2,
   Download,
   Filter,
+  Instagram,
+  KanbanSquare,
+  Mail,
+  MapPin,
   MessageSquare,
   MoreHorizontal,
   Phone,
   Plus,
   Search,
   Sparkles,
+  StickyNote,
+  Table as TableIcon,
   Target,
+  Trash2,
   Upload,
   Users,
   X,
@@ -56,15 +66,15 @@ import {
   STATUS_LABEL,
   STATUS_TONE,
   UFS,
+  type Interaction,
+  type InteractionKind,
   type Prospect,
   type ProspectPotential,
   type ProspectStatus,
 } from "@/lib/mock-prospects";
 
 export const Route = createFileRoute("/prospeccao")({
-  head: () => ({
-    meta: [{ title: "Prospecção — INFINDA" }],
-  }),
+  head: () => ({ meta: [{ title: "Prospecção — INFINDA" }] }),
   component: ProspeccaoPage,
 });
 
@@ -80,28 +90,33 @@ const POTENTIALS: ProspectPotential[] = ["alto", "medio", "baixo"];
 
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
 
+const INTERACTION_ICON: Record<InteractionKind, typeof MessageSquare> = {
+  whatsapp: MessageSquare,
+  ligacao: Phone,
+  email: Mail,
+  reuniao: CalendarPlus,
+  nota: StickyNote,
+  status: CheckCircle2,
+};
+const INTERACTION_LABEL: Record<InteractionKind, string> = {
+  whatsapp: "WhatsApp",
+  ligacao: "Ligação",
+  email: "Email",
+  reuniao: "Reunião",
+  nota: "Nota",
+  status: "Status",
+};
+
 function StatCard({
-  icon: Icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: typeof Users;
-  label: string;
-  value: number;
-  hint: string;
-}) {
+  icon: Icon, label, value, hint,
+}: { icon: typeof Users; label: string; value: number; hint: string }) {
   return (
     <div className="surface-card p-4">
-      <div className="flex items-center justify-between">
-        <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent">
-          <Icon className="h-4 w-4 text-primary-glow" />
-        </span>
-      </div>
+      <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent">
+        <Icon className="h-4 w-4 text-primary-glow" />
+      </span>
       <p className="mt-4 text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-bold tracking-tight">
-        {value.toLocaleString("pt-BR")}
-      </p>
+      <p className="mt-1 text-2xl font-bold tracking-tight">{value.toLocaleString("pt-BR")}</p>
       <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>
     </div>
   );
@@ -109,38 +124,27 @@ function StatCard({
 
 function StatusBadge({ status }: { status: ProspectStatus }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${STATUS_TONE[status]}`}
-    >
+    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${STATUS_TONE[status]}`}>
       {STATUS_LABEL[status]}
     </span>
   );
 }
-
 function PotentialBadge({ p }: { p: ProspectPotential }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${POTENTIAL_TONE[p]}`}
-    >
+    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${POTENTIAL_TONE[p]}`}>
       {POTENTIAL_LABEL[p]}
     </span>
   );
 }
 
 const EMPTY_FORM: Omit<Prospect, "id" | "createdAt"> = {
-  company: "",
-  segment: SEGMENTS[0],
-  owner: "",
-  whatsapp: "",
-  phone: "",
-  email: "",
-  instagram: "",
-  city: "",
-  state: "SP",
-  source: SOURCES[0],
-  potential: "medio",
-  status: "nao_contatado",
+  company: "", segment: SEGMENTS[0], owner: "",
+  whatsapp: "", phone: "", email: "", instagram: "",
+  city: "", state: "SP", source: SOURCES[0],
+  potential: "medio", status: "nao_contatado",
 };
+
+const newId = (prefix = "p") => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
 function ProspeccaoPage() {
   const { user } = useAuth();
@@ -154,9 +158,12 @@ function ProspeccaoPage() {
   const [stateFilter, setStateFilter] = useState<string>("all");
   const [potentialFilter, setPotentialFilter] = useState<ProspectPotential | "all">("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [view, setView] = useState<"table" | "kanban">("table");
 
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM, owner: user?.name ?? "" });
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   if (!user) return <Navigate to="/login" replace />;
 
@@ -168,21 +175,8 @@ function ProspeccaoPage() {
       if (stateFilter !== "all" && p.state !== stateFilter) return false;
       if (potentialFilter !== "all" && p.potential !== potentialFilter) return false;
       if (!q) return true;
-      return [
-        p.company,
-        p.segment,
-        p.owner,
-        p.email,
-        p.whatsapp,
-        p.phone,
-        p.instagram,
-        p.city,
-        p.state,
-        p.source,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(q);
+      return [p.company, p.segment, p.owner, p.email, p.whatsapp, p.phone, p.instagram, p.city, p.state, p.source]
+        .join(" ").toLowerCase().includes(q);
     });
   }, [prospects, search, statusFilter, segmentFilter, stateFilter, potentialFilter]);
 
@@ -194,61 +188,102 @@ function ProspeccaoPage() {
     return { t, contatadas, qualificadas, agendadas };
   }, [prospects]);
 
+  const detail = prospects.find((p) => p.id === detailId) ?? null;
+
+  const addInteraction = (id: string, kind: InteractionKind, text: string) => {
+    const ix: Interaction = { id: newId("ix"), kind, text, by: user.name, at: "agora" };
+    setProspects((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, interactions: [ix, ...(p.interactions ?? [])] } : p)),
+    );
+  };
+
   const updateStatus = (id: string, status: ProspectStatus) => {
     setProspects((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)));
-    toast.success(`Status atualizado: ${STATUS_LABEL[status]}`);
+    addInteraction(id, "status", `Status alterado para "${STATUS_LABEL[status]}"`);
+    toast.success(`Status: ${STATUS_LABEL[status]}`);
   };
 
-  const removeProspect = (id: string) => {
-    setProspects((prev) => prev.filter((p) => p.id !== id));
-    toast.success("Empresa removida da prospecção");
+  const removeProspect = (ids: string[]) => {
+    setProspects((prev) => prev.filter((p) => !ids.includes(p.id)));
+    setSelected(new Set());
+    toast.success(`${ids.length} empresa(s) removida(s)`);
   };
 
-  const openWhats = (n: string) => {
-    const d = onlyDigits(n);
+  const bulkStatus = (status: ProspectStatus) => {
+    const ids = Array.from(selected);
+    setProspects((prev) =>
+      prev.map((p) =>
+        ids.includes(p.id)
+          ? {
+              ...p,
+              status,
+              interactions: [
+                { id: newId("ix"), kind: "status", text: `Status em lote → "${STATUS_LABEL[status]}"`, by: user.name, at: "agora" },
+                ...(p.interactions ?? []),
+              ],
+            }
+          : p,
+      ),
+    );
+    toast.success(`${ids.length} atualizada(s) para ${STATUS_LABEL[status]}`);
+    setSelected(new Set());
+  };
+
+  const bulkAssign = (owner: string) => {
+    const ids = Array.from(selected);
+    setProspects((prev) => prev.map((p) => (ids.includes(p.id) ? { ...p, owner } : p)));
+    toast.success(`${ids.length} atribuída(s) a ${owner}`);
+    setSelected(new Set());
+  };
+
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+
+  const allVisibleSelected = filtered.length > 0 && filtered.every((p) => selected.has(p.id));
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) setSelected(new Set());
+    else setSelected(new Set(filtered.map((p) => p.id)));
+  };
+
+  const openWhats = (p: Prospect) => {
+    const d = onlyDigits(p.whatsapp);
     if (!d) return toast.error("WhatsApp não cadastrado");
+    addInteraction(p.id, "whatsapp", "Abriu conversa no WhatsApp");
     window.open(`https://wa.me/55${d}`, "_blank");
   };
-  const callPhone = (n: string) => {
-    const d = onlyDigits(n);
+  const callPhone = (p: Prospect) => {
+    const d = onlyDigits(p.phone || p.whatsapp);
     if (!d) return toast.error("Telefone não cadastrado");
+    addInteraction(p.id, "ligacao", "Iniciou ligação");
     window.open(`tel:+55${d}`);
   };
 
   const convertToLead = (p: Prospect) => {
-    toast.success(`${p.company} convertida em lead no CRM`);
-    setProspects((prev) =>
-      prev.map((x) => (x.id === p.id ? { ...x, status: "qualificado" } : x)),
-    );
-    setTimeout(() => navigate({ to: "/crm" }), 600);
+    addInteraction(p.id, "status", "Convertida em Lead no CRM");
+    setProspects((prev) => prev.map((x) => (x.id === p.id ? { ...x, status: "qualificado" } : x)));
+    toast.success(`${p.company} convertida em lead`);
+    setTimeout(() => navigate({ to: "/crm" }), 500);
   };
 
   const handleCreate = () => {
     if (!form.company.trim()) return toast.error("Informe o nome da empresa");
-    const novo: Prospect = {
-      ...form,
-      id: `p_${Date.now()}`,
-      owner: form.owner || user.name,
-      createdAt: "agora",
-    };
-    setProspects((prev) => [novo, ...prev]);
-    toast.success("Empresa cadastrada com sucesso");
+    setProspects((prev) => [
+      { ...form, id: newId(), owner: form.owner || user.name, createdAt: "agora", interactions: [] },
+      ...prev,
+    ]);
+    toast.success("Empresa cadastrada");
     setForm({ ...EMPTY_FORM, owner: user.name });
     setDialogOpen(false);
   };
 
-  const exportCsv = () => {
-    const headers = [
-      "Empresa","Segmento","Responsavel","WhatsApp","Telefone","Email",
-      "Instagram","Cidade","Estado","Origem","Potencial","Status",
-    ];
-    const rows = prospects.map((p) => [
-      p.company, p.segment, p.owner, p.whatsapp, p.phone, p.email,
-      p.instagram, p.city, p.state, p.source, p.potential, STATUS_LABEL[p.status],
-    ]);
-    const csv = [headers, ...rows]
-      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
+  const exportCsv = (rows = prospects) => {
+    const headers = ["Empresa","Segmento","Responsavel","WhatsApp","Telefone","Email","Instagram","Cidade","Estado","Origem","Potencial","Status"];
+    const data = rows.map((p) => [p.company, p.segment, p.owner, p.whatsapp, p.phone, p.email, p.instagram, p.city, p.state, p.source, p.potential, STATUS_LABEL[p.status]]);
+    const csv = [headers, ...data].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -256,7 +291,7 @@ function ProspeccaoPage() {
     a.download = `prospeccao-infinda-${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success("CSV exportado");
+    toast.success(`${rows.length} linha(s) exportada(s)`);
   };
 
   const handleImport = async (file: File) => {
@@ -264,70 +299,50 @@ function ProspeccaoPage() {
     const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
     if (lines.length < 2) return toast.error("CSV vazio");
     const parseLine = (l: string): string[] => {
-      const out: string[] = [];
-      let cur = "", inQ = false;
+      const out: string[] = []; let cur = "", inQ = false;
       for (let i = 0; i < l.length; i++) {
         const c = l[i];
-        if (c === '"') {
-          if (inQ && l[i + 1] === '"') { cur += '"'; i++; }
-          else inQ = !inQ;
-        } else if (c === "," && !inQ) { out.push(cur); cur = ""; }
-        else cur += c;
+        if (c === '"') { if (inQ && l[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+        else if (c === "," && !inQ) { out.push(cur); cur = ""; } else cur += c;
       }
-      out.push(cur);
-      return out.map((s) => s.trim());
+      out.push(cur); return out.map((s) => s.trim());
     };
     const headers = parseLine(lines[0]).map((h) => h.toLowerCase());
     const idx = (n: string) => headers.findIndex((h) => h.includes(n));
     const iEmpresa = idx("empresa");
     if (iEmpresa < 0) return toast.error("Cabeçalho 'Empresa' não encontrado");
-    const fields = {
-      segmento: idx("segmento"),
-      responsavel: idx("respons"),
-      whatsapp: idx("whats"),
-      telefone: idx("telefone"),
-      email: idx("email"),
-      instagram: idx("instagram"),
-      cidade: idx("cidade"),
-      estado: idx("estado"),
-      origem: idx("origem"),
-      potencial: idx("potencial"),
+    const f = {
+      segmento: idx("segmento"), responsavel: idx("respons"), whatsapp: idx("whats"),
+      telefone: idx("telefone"), email: idx("email"), instagram: idx("instagram"),
+      cidade: idx("cidade"), estado: idx("estado"), origem: idx("origem"), potencial: idx("potencial"),
     };
     const novos: Prospect[] = [];
     for (let i = 1; i < lines.length; i++) {
       const c = parseLine(lines[i]);
-      const company = c[iEmpresa];
-      if (!company) continue;
-      const pot = (c[fields.potencial] || "medio").toLowerCase() as ProspectPotential;
+      const company = c[iEmpresa]; if (!company) continue;
+      const pot = (c[f.potencial] || "medio").toLowerCase() as ProspectPotential;
       novos.push({
-        id: `p_${Date.now()}_${i}`,
-        company,
-        segment: c[fields.segmento] || "Outros",
-        owner: c[fields.responsavel] || user.name,
-        whatsapp: c[fields.whatsapp] || "",
-        phone: c[fields.telefone] || "",
-        email: c[fields.email] || "",
-        instagram: c[fields.instagram] || "",
-        city: c[fields.cidade] || "",
-        state: (c[fields.estado] || "SP").toUpperCase().slice(0, 2),
-        source: c[fields.origem] || "Importação",
+        id: newId(), company,
+        segment: c[f.segmento] || "Outros",
+        owner: c[f.responsavel] || user.name,
+        whatsapp: c[f.whatsapp] || "", phone: c[f.telefone] || "",
+        email: c[f.email] || "", instagram: c[f.instagram] || "",
+        city: c[f.cidade] || "", state: (c[f.estado] || "SP").toUpperCase().slice(0, 2),
+        source: c[f.origem] || "Importação",
         potential: POTENTIALS.includes(pot) ? pot : "medio",
-        status: "nao_contatado",
-        createdAt: "importado",
+        status: "nao_contatado", createdAt: "importado", interactions: [],
       });
     }
-    if (!novos.length) return toast.error("Nenhuma linha válida no CSV");
+    if (!novos.length) return toast.error("Nenhuma linha válida");
     setProspects((prev) => [...novos, ...prev]);
     toast.success(`${novos.length} empresa(s) importada(s)`);
   };
 
   const clearFilters = () => {
-    setStatusFilter("all");
-    setSegmentFilter("all");
-    setStateFilter("all");
-    setPotentialFilter("all");
-    setSearch("");
+    setStatusFilter("all"); setSegmentFilter("all"); setStateFilter("all"); setPotentialFilter("all"); setSearch("");
   };
+
+  const selCount = selected.size;
 
   return (
     <AppShell
@@ -335,27 +350,14 @@ function ProspeccaoPage() {
       subtitle="Sua máquina de geração de oportunidades comerciais"
       actions={
         <div className="hidden items-center gap-2 sm:flex">
-          <Button variant="outline" className="h-9 text-xs" onClick={exportCsv}>
+          <Button variant="outline" className="h-9 text-xs" onClick={() => exportCsv()}>
             <Download className="mr-1.5 h-4 w-4" /> Exportar
           </Button>
-          <Button
-            variant="outline"
-            className="h-9 text-xs"
-            onClick={() => fileRef.current?.click()}
-          >
+          <Button variant="outline" className="h-9 text-xs" onClick={() => fileRef.current?.click()}>
             <Upload className="mr-1.5 h-4 w-4" /> Importar CSV
           </Button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleImport(f);
-              e.target.value = "";
-            }}
-          />
+          <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = ""; }} />
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button className="btn-gradient h-9 text-xs font-semibold">
@@ -380,32 +382,22 @@ function ProspeccaoPage() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+            <Input value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="Busca inteligente: empresa, contato, cidade, segmento…"
-              className="h-10 pl-9"
-            />
+              className="h-10 pl-9" />
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              className="h-10 text-xs"
-              onClick={() => setShowFilters((s) => !s)}
-            >
-              <Filter className="mr-1.5 h-4 w-4" />
-              Filtros
-              {(statusFilter !== "all" ||
-                segmentFilter !== "all" ||
-                stateFilter !== "all" ||
-                potentialFilter !== "all") && (
-                <span className="ml-2 rounded-full bg-primary/20 px-1.5 text-[10px] text-primary-glow">
-                  ativos
-                </span>
+            <Tabs value={view} onValueChange={(v) => setView(v as "table" | "kanban")}>
+              <TabsList className="h-10">
+                <TabsTrigger value="table" className="text-xs"><TableIcon className="mr-1.5 h-3.5 w-3.5" />Tabela</TabsTrigger>
+                <TabsTrigger value="kanban" className="text-xs"><KanbanSquare className="mr-1.5 h-3.5 w-3.5" />Kanban</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Button variant="outline" className="h-10 text-xs" onClick={() => setShowFilters((s) => !s)}>
+              <Filter className="mr-1.5 h-4 w-4" /> Filtros
+              {(statusFilter !== "all" || segmentFilter !== "all" || stateFilter !== "all" || potentialFilter !== "all") && (
+                <span className="ml-2 rounded-full bg-primary/20 px-1.5 text-[10px] text-primary-glow">ativos</span>
               )}
-            </Button>
-            <Button variant="ghost" className="h-10 text-xs sm:hidden" onClick={() => setDialogOpen(true)}>
-              <Plus className="mr-1.5 h-4 w-4" /> Nova
             </Button>
           </div>
         </div>
@@ -416,9 +408,7 @@ function ProspeccaoPage() {
               <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos os status</SelectItem>
-                {STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
-                ))}
+                {STATUSES.map((s) => <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={segmentFilter} onValueChange={setSegmentFilter}>
@@ -435,16 +425,11 @@ function ProspeccaoPage() {
                 {UFS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select
-              value={potentialFilter}
-              onValueChange={(v) => setPotentialFilter(v as ProspectPotential | "all")}
-            >
+            <Select value={potentialFilter} onValueChange={(v) => setPotentialFilter(v as ProspectPotential | "all")}>
               <SelectTrigger><SelectValue placeholder="Potencial" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos potenciais</SelectItem>
-                {POTENTIALS.map((p) => (
-                  <SelectItem key={p} value={p}>{POTENTIAL_LABEL[p]}</SelectItem>
-                ))}
+                {POTENTIALS.map((p) => <SelectItem key={p} value={p}>{POTENTIAL_LABEL[p]}</SelectItem>)}
               </SelectContent>
             </Select>
             <Button variant="ghost" onClick={clearFilters} className="h-10 text-xs">
@@ -454,215 +439,432 @@ function ProspeccaoPage() {
         )}
       </section>
 
-      {/* Tabela */}
-      <section className="mt-4 surface-card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-accent/40 text-left text-[11px] uppercase tracking-wider text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3">Empresa</th>
-                <th className="px-4 py-3">Contato</th>
-                <th className="px-4 py-3">Localização</th>
-                <th className="px-4 py-3">Origem</th>
-                <th className="px-4 py-3">Potencial</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 && (
+      {/* Bulk action bar */}
+      {selCount > 0 && (
+        <section className="surface-card mt-3 flex flex-col items-start gap-3 border-primary/30 bg-primary/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3 text-sm">
+            <span className="rounded-md bg-primary/20 px-2 py-0.5 text-xs font-semibold text-primary-glow">
+              {selCount} selecionada{selCount > 1 ? "s" : ""}
+            </span>
+            <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setSelected(new Set())}>
+              Limpar seleção
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 text-xs">
+                  <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Alterar status
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {STATUSES.map((s) => (
+                  <DropdownMenuItem key={s} onClick={() => bulkStatus(s)} className="text-xs">
+                    {STATUS_LABEL[s]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 text-xs">
+                  <Users className="mr-1.5 h-3.5 w-3.5" /> Atribuir
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {["Valdinei", "Danielly"].map((n) => (
+                  <DropdownMenuItem key={n} onClick={() => bulkAssign(n)} className="text-xs">{n}</DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button variant="outline" size="sm" className="h-8 text-xs"
+              onClick={() => exportCsv(prospects.filter((p) => selected.has(p.id)))}>
+              <Download className="mr-1.5 h-3.5 w-3.5" /> Exportar
+            </Button>
+            <Button variant="outline" size="sm"
+              className="h-8 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
+              onClick={() => removeProspect(Array.from(selected))}>
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Excluir
+            </Button>
+          </div>
+        </section>
+      )}
+
+      {/* View */}
+      {view === "table" ? (
+        <section className="mt-4 surface-card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-accent/40 text-left text-[11px] uppercase tracking-wider text-muted-foreground">
                 <tr>
-                  <td colSpan={7} className="px-4 py-16 text-center text-sm text-muted-foreground">
-                    Nenhuma empresa encontrada. Ajuste os filtros ou cadastre uma nova.
-                  </td>
+                  <th className="px-3 py-3 w-10">
+                    <Checkbox checked={allVisibleSelected} onCheckedChange={toggleSelectAll} aria-label="Selecionar todos" />
+                  </th>
+                  <th className="px-4 py-3">Empresa</th>
+                  <th className="px-4 py-3">Contato</th>
+                  <th className="px-4 py-3">Localização</th>
+                  <th className="px-4 py-3">Origem</th>
+                  <th className="px-4 py-3">Potencial</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Ações</th>
                 </tr>
-              )}
-              {filtered.map((p) => (
-                <tr key={p.id} className="border-t border-border/60 hover:bg-accent/30">
-                  <td className="px-4 py-3 align-top">
-                    <div className="font-semibold">{p.company}</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {p.segment} · resp. {p.owner}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    <div className="text-xs">{p.whatsapp || p.phone || "—"}</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {p.email || p.instagram || "—"}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 align-top text-xs">
-                    {p.city ? `${p.city} - ${p.state}` : p.state || "—"}
-                  </td>
-                  <td className="px-4 py-3 align-top text-xs">{p.source}</td>
-                  <td className="px-4 py-3 align-top"><PotentialBadge p={p.potential} /></td>
-                  <td className="px-4 py-3 align-top"><StatusBadge status={p.status} /></td>
-                  <td className="px-4 py-3 align-top">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 text-emerald-400 hover:text-emerald-300"
-                        title="WhatsApp"
-                        onClick={() => openWhats(p.whatsapp)}
-                      >
-                        <MessageSquare className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8"
-                        title="Ligar"
-                        onClick={() => callPhone(p.phone || p.whatsapp)}
-                      >
-                        <Phone className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8"
-                        title="Agendar"
-                        onClick={() => updateStatus(p.id, "agendado")}
-                      >
-                        <CalendarPlus className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 text-primary-glow"
-                        title="Converter para Lead"
-                        onClick={() => convertToLead(p)}
-                      >
-                        <Sparkles className="h-4 w-4" />
-                      </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="icon" variant="ghost" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel className="text-[11px]">Alterar status</DropdownMenuLabel>
-                          {STATUSES.map((s) => (
-                            <DropdownMenuItem
-                              key={s}
-                              onClick={() => updateStatus(p.id, s)}
-                              className="text-xs"
-                            >
-                              <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
-                              {STATUS_LABEL[s]}
-                            </DropdownMenuItem>
-                          ))}
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-xs text-destructive"
-                            onClick={() => removeProspect(p.id)}
-                          >
-                            <X className="mr-2 h-3.5 w-3.5" /> Remover
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex items-center justify-between border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
-          <span>Mostrando {filtered.length} de {prospects.length} empresas</span>
-          <span className="hidden sm:inline">INFINDA digital — Prospecção</span>
-        </div>
-      </section>
+              </thead>
+              <tbody>
+                {filtered.length === 0 && (
+                  <tr><td colSpan={8} className="px-4 py-16 text-center text-sm text-muted-foreground">
+                    Nenhuma empresa encontrada.
+                  </td></tr>
+                )}
+                {filtered.map((p) => (
+                  <tr key={p.id}
+                    className={`border-t border-border/60 hover:bg-accent/30 ${selected.has(p.id) ? "bg-primary/5" : ""}`}>
+                    <td className="px-3 py-3 align-top">
+                      <Checkbox checked={selected.has(p.id)} onCheckedChange={() => toggleSelect(p.id)} aria-label={`Selecionar ${p.company}`} />
+                    </td>
+                    <td className="px-4 py-3 align-top">
+                      <button className="text-left" onClick={() => setDetailId(p.id)}>
+                        <div className="font-semibold hover:text-primary-glow">{p.company}</div>
+                        <div className="text-[11px] text-muted-foreground">{p.segment} · resp. {p.owner}</div>
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 align-top">
+                      <div className="text-xs">{p.whatsapp || p.phone || "—"}</div>
+                      <div className="text-[11px] text-muted-foreground">{p.email || p.instagram || "—"}</div>
+                    </td>
+                    <td className="px-4 py-3 align-top text-xs">{p.city ? `${p.city} - ${p.state}` : p.state || "—"}</td>
+                    <td className="px-4 py-3 align-top text-xs">{p.source}</td>
+                    <td className="px-4 py-3 align-top"><PotentialBadge p={p.potential} /></td>
+                    <td className="px-4 py-3 align-top"><StatusBadge status={p.status} /></td>
+                    <td className="px-4 py-3 align-top">
+                      <RowActions p={p} onWhats={openWhats} onCall={callPhone}
+                        onAgendar={() => updateStatus(p.id, "agendado")}
+                        onConvert={() => convertToLead(p)} onStatus={updateStatus}
+                        onRemove={() => removeProspect([p.id])} onOpen={() => setDetailId(p.id)} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-between border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
+            <span>Mostrando {filtered.length} de {prospects.length} empresas</span>
+            <span className="hidden sm:inline">INFINDA digital — Prospecção</span>
+          </div>
+        </section>
+      ) : (
+        <KanbanView
+          prospects={filtered}
+          onOpen={(id) => setDetailId(id)}
+          onMove={(id, status) => updateStatus(id, status)}
+        />
+      )}
+
+      {/* Detail modal */}
+      <Dialog open={!!detail} onOpenChange={(o) => !o && setDetailId(null)}>
+        {detail && (
+          <DetailDialog
+            p={detail}
+            onWhats={() => openWhats(detail)}
+            onCall={() => callPhone(detail)}
+            onStatus={(s) => updateStatus(detail.id, s)}
+            onConvert={() => convertToLead(detail)}
+            onAddNote={(text) => { addInteraction(detail.id, "nota", text); toast.success("Nota registrada"); }}
+          />
+        )}
+      </Dialog>
     </AppShell>
   );
 }
 
+function RowActions({
+  p, onWhats, onCall, onAgendar, onConvert, onStatus, onRemove, onOpen,
+}: {
+  p: Prospect;
+  onWhats: (p: Prospect) => void;
+  onCall: (p: Prospect) => void;
+  onAgendar: () => void;
+  onConvert: () => void;
+  onStatus: (id: string, s: ProspectStatus) => void;
+  onRemove: () => void;
+  onOpen: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <Button size="icon" variant="ghost" className="h-8 w-8 text-emerald-400" title="WhatsApp" onClick={() => onWhats(p)}>
+        <MessageSquare className="h-4 w-4" />
+      </Button>
+      <Button size="icon" variant="ghost" className="h-8 w-8" title="Ligar" onClick={() => onCall(p)}>
+        <Phone className="h-4 w-4" />
+      </Button>
+      <Button size="icon" variant="ghost" className="h-8 w-8" title="Agendar" onClick={onAgendar}>
+        <CalendarPlus className="h-4 w-4" />
+      </Button>
+      <Button size="icon" variant="ghost" className="h-8 w-8 text-primary-glow" title="Converter para Lead" onClick={onConvert}>
+        <Sparkles className="h-4 w-4" />
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="icon" variant="ghost" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={onOpen} className="text-xs">Abrir detalhes</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-[11px]">Alterar status</DropdownMenuLabel>
+          {STATUSES.map((s) => (
+            <DropdownMenuItem key={s} onClick={() => onStatus(p.id, s)} className="text-xs">
+              <CheckCircle2 className="mr-2 h-3.5 w-3.5" />{STATUS_LABEL[s]}
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem className="text-xs text-destructive" onClick={onRemove}>
+            <Trash2 className="mr-2 h-3.5 w-3.5" /> Remover
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+function KanbanView({
+  prospects, onOpen, onMove,
+}: {
+  prospects: Prospect[];
+  onOpen: (id: string) => void;
+  onMove: (id: string, status: ProspectStatus) => void;
+}) {
+  const onDragStart = (e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData("text/plain", id);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const onDrop = (e: React.DragEvent, status: ProspectStatus) => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData("text/plain");
+    if (id) onMove(id, status);
+  };
+  return (
+    <section className="mt-4 overflow-x-auto pb-2">
+      <div className="flex min-w-max gap-3">
+        {STATUSES.map((s) => {
+          const items = prospects.filter((p) => p.status === s);
+          return (
+            <div key={s}
+              className="w-[280px] shrink-0 surface-card flex flex-col"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => onDrop(e, s)}
+            >
+              <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={s} />
+                </div>
+                <span className="text-[11px] text-muted-foreground">{items.length}</span>
+              </div>
+              <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto p-2">
+                {items.length === 0 && (
+                  <div className="rounded-md border border-dashed border-border/60 p-4 text-center text-[11px] text-muted-foreground">
+                    Arraste empresas aqui
+                  </div>
+                )}
+                {items.map((p) => (
+                  <div key={p.id}
+                    draggable onDragStart={(e) => onDragStart(e, p.id)}
+                    onClick={() => onOpen(p.id)}
+                    className="cursor-grab rounded-lg border border-border bg-card/60 p-3 transition hover:border-primary/40 active:cursor-grabbing"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-semibold leading-tight">{p.company}</p>
+                      <PotentialBadge p={p.potential} />
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground">{p.segment}</p>
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      {p.city ? `${p.city} - ${p.state}` : p.state || "—"} · {p.owner}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function DetailDialog({
+  p, onWhats, onCall, onStatus, onConvert, onAddNote,
+}: {
+  p: Prospect;
+  onWhats: () => void;
+  onCall: () => void;
+  onStatus: (s: ProspectStatus) => void;
+  onConvert: () => void;
+  onAddNote: (text: string) => void;
+}) {
+  const [note, setNote] = useState("");
+  const timeline = p.interactions ?? [];
+  return (
+    <DialogContent className="max-w-3xl">
+      <DialogHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <DialogTitle className="text-xl">{p.company}</DialogTitle>
+            <DialogDescription className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+              <span>{p.segment}</span>
+              <span className="opacity-50">·</span>
+              <span>resp. {p.owner}</span>
+              <span className="opacity-50">·</span>
+              <PotentialBadge p={p.potential} />
+              <StatusBadge status={p.status} />
+            </DialogDescription>
+          </div>
+        </div>
+      </DialogHeader>
+
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-[1fr_1.2fr]">
+        {/* Contato */}
+        <div className="space-y-3">
+          <div className="surface-card p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Contato</p>
+            <ul className="mt-2 space-y-2 text-xs">
+              <li className="flex items-center gap-2"><MessageSquare className="h-3.5 w-3.5 text-emerald-400" /> {p.whatsapp || "—"}</li>
+              <li className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" /> {p.phone || "—"}</li>
+              <li className="flex items-center gap-2"><Mail className="h-3.5 w-3.5" /> {p.email || "—"}</li>
+              <li className="flex items-center gap-2"><Instagram className="h-3.5 w-3.5" /> {p.instagram || "—"}</li>
+              <li className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5" /> {p.city ? `${p.city} - ${p.state}` : p.state || "—"}</li>
+            </ul>
+          </div>
+
+          <div className="surface-card p-3 space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Ações</p>
+            <div className="grid grid-cols-2 gap-2">
+              <Button size="sm" variant="outline" className="h-8 text-xs" onClick={onWhats}>
+                <MessageSquare className="mr-1.5 h-3.5 w-3.5 text-emerald-400" /> WhatsApp
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 text-xs" onClick={onCall}>
+                <Phone className="mr-1.5 h-3.5 w-3.5" /> Ligar
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => onStatus("agendado")}>
+                <CalendarPlus className="mr-1.5 h-3.5 w-3.5" /> Agendar
+              </Button>
+              <Button size="sm" className="btn-gradient h-8 text-xs" onClick={onConvert}>
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Converter
+              </Button>
+            </div>
+            <Select value={p.status} onValueChange={(v) => onStatus(v as ProspectStatus)}>
+              <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {STATUSES.map((s) => <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Timeline */}
+        <div className="surface-card flex flex-col p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Timeline</p>
+
+          <div className="mt-2 space-y-2">
+            <Textarea value={note} onChange={(e) => setNote(e.target.value)}
+              placeholder="Adicionar nota ou observação…" className="min-h-[60px] text-xs" />
+            <div className="flex justify-end">
+              <Button size="sm" className="btn-gradient h-8 text-xs"
+                onClick={() => { if (!note.trim()) return; onAddNote(note.trim()); setNote(""); }}>
+                <Plus className="mr-1.5 h-3.5 w-3.5" /> Registrar
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-3 max-h-[340px] flex-1 overflow-y-auto pr-1">
+            {timeline.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border/60 p-6 text-center text-xs text-muted-foreground">
+                Sem interações ainda. Use os botões ao lado para começar.
+              </div>
+            ) : (
+              <ol className="relative space-y-3 border-l border-border pl-4">
+                {timeline.map((ix) => {
+                  const Icon = INTERACTION_ICON[ix.kind];
+                  return (
+                    <li key={ix.id} className="relative">
+                      <span className="absolute -left-[22px] grid h-6 w-6 place-items-center rounded-full border border-border bg-card">
+                        <Icon className="h-3 w-3 text-primary-glow" />
+                      </span>
+                      <div className="rounded-md border border-border/60 bg-card/50 p-2.5">
+                        <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
+                          <span>{INTERACTION_LABEL[ix.kind]}</span>
+                          <span>{ix.at} · {ix.by}</span>
+                        </div>
+                        <p className="mt-1 text-xs">{ix.text}</p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
+        </div>
+      </div>
+    </DialogContent>
+  );
+}
+
 function NewProspectDialog({
-  form,
-  setForm,
-  onCreate,
+  form, setForm, onCreate,
 }: {
   form: Omit<Prospect, "id" | "createdAt">;
   setForm: (f: Omit<Prospect, "id" | "createdAt">) => void;
   onCreate: () => void;
 }) {
-  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
-    setForm({ ...form, [k]: v });
-
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm({ ...form, [k]: v });
   return (
     <DialogContent className="max-w-2xl">
       <DialogHeader>
         <DialogTitle>Nova empresa na prospecção</DialogTitle>
-        <DialogDescription>
-          Cadastre uma oportunidade. Você pode evoluir o status conforme a abordagem.
-        </DialogDescription>
+        <DialogDescription>Cadastre uma oportunidade e evolua o status conforme a abordagem.</DialogDescription>
       </DialogHeader>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5 sm:col-span-2">
           <Label>Nome da empresa *</Label>
           <Input value={form.company} onChange={(e) => set("company", e.target.value)} placeholder="Ex: Padaria Pão Quente" />
         </div>
-        <div className="space-y-1.5">
-          <Label>Segmento</Label>
+        <div className="space-y-1.5"><Label>Segmento</Label>
           <Select value={form.segment} onValueChange={(v) => set("segment", v)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {SEGMENTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-            </SelectContent>
+            <SelectContent>{SEGMENTS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
           </Select>
         </div>
-        <div className="space-y-1.5">
-          <Label>Responsável</Label>
+        <div className="space-y-1.5"><Label>Responsável</Label>
           <Input value={form.owner} onChange={(e) => set("owner", e.target.value)} placeholder="Nome do consultor" />
         </div>
-        <div className="space-y-1.5">
-          <Label>WhatsApp</Label>
+        <div className="space-y-1.5"><Label>WhatsApp</Label>
           <Input value={form.whatsapp} onChange={(e) => set("whatsapp", e.target.value)} placeholder="(11) 99999-0000" />
         </div>
-        <div className="space-y-1.5">
-          <Label>Telefone</Label>
+        <div className="space-y-1.5"><Label>Telefone</Label>
           <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="(11) 3333-0000" />
         </div>
-        <div className="space-y-1.5">
-          <Label>Email</Label>
+        <div className="space-y-1.5"><Label>Email</Label>
           <Input value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="contato@empresa.com" />
         </div>
-        <div className="space-y-1.5">
-          <Label>Instagram</Label>
+        <div className="space-y-1.5"><Label>Instagram</Label>
           <Input value={form.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="@empresa" />
         </div>
-        <div className="space-y-1.5">
-          <Label>Cidade</Label>
+        <div className="space-y-1.5"><Label>Cidade</Label>
           <Input value={form.city} onChange={(e) => set("city", e.target.value)} placeholder="São Paulo" />
         </div>
-        <div className="space-y-1.5">
-          <Label>Estado</Label>
+        <div className="space-y-1.5"><Label>Estado</Label>
           <Select value={form.state} onValueChange={(v) => set("state", v)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {UFS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-            </SelectContent>
+            <SelectContent>{UFS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
           </Select>
         </div>
-        <div className="space-y-1.5">
-          <Label>Origem</Label>
+        <div className="space-y-1.5"><Label>Origem</Label>
           <Select value={form.source} onValueChange={(v) => set("source", v)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {SOURCES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-            </SelectContent>
+            <SelectContent>{SOURCES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
           </Select>
         </div>
-        <div className="space-y-1.5">
-          <Label>Potencial</Label>
+        <div className="space-y-1.5"><Label>Potencial</Label>
           <Select value={form.potential} onValueChange={(v) => set("potential", v as ProspectPotential)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {POTENTIALS.map((p) => (
-                <SelectItem key={p} value={p}>{POTENTIAL_LABEL[p]}</SelectItem>
-              ))}
-            </SelectContent>
+            <SelectContent>{POTENTIALS.map((p) => <SelectItem key={p} value={p}>{POTENTIAL_LABEL[p]}</SelectItem>)}</SelectContent>
           </Select>
         </div>
       </div>
