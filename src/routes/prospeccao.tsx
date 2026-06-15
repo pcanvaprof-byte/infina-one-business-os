@@ -565,6 +565,9 @@ function ProspeccaoPage() {
           <Button variant="outline" className="h-9 text-xs" onClick={() => fileRef.current?.click()}>
             <Upload className="mr-1.5 h-4 w-4" /> Importar
           </Button>
+          <Button variant="outline" className="h-9 text-xs" onClick={() => setHistoryOpen(true)}>
+            <History className="mr-1.5 h-4 w-4" /> Histórico
+          </Button>
           <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,text/csv" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = ""; }} />
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -575,6 +578,7 @@ function ProspeccaoPage() {
             </DialogTrigger>
             <NewProspectDialog form={form} setForm={setForm} onCreate={handleCreate} />
           </Dialog>
+
         </div>
       }
     >
