@@ -158,9 +158,13 @@ function LoginPage() {
                 <Button type="submit" className="btn-gradient h-11 w-full text-sm font-semibold">
                   Entrar na plataforma
                 </Button>
+                <Button type="button" variant="outline" onClick={handleDemo} className="h-11 w-full text-sm font-semibold">
+                  Entrar como demo (sem senha)
+                </Button>
                 <p className="text-center text-xs text-muted-foreground">
-                  Versão demo · qualquer email/senha funciona
+                  Versão demo · email e senha são opcionais
                 </p>
+
               </form>
             </TabsContent>
 
