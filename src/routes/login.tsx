@@ -36,23 +36,21 @@ function LoginPage() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
-      toast.error("Preencha email e senha.");
-      return;
-    }
-    login(email, undefined, role);
+    login(email || "demo@infinda.com", "Demo User", role);
     toast.success("Bem-vindo de volta!");
     navigate({ to: "/dashboard" });
   };
 
   const handleSignup = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password || !name) {
-      toast.error("Preencha todos os campos.");
-      return;
-    }
-    login(email, name, role);
+    login(email || "demo@infinda.com", name || "Demo User", role);
     toast.success("Conta criada com sucesso!");
+    navigate({ to: "/dashboard" });
+  };
+
+  const handleDemo = () => {
+    login("demo@infinda.com", "Demo User", role);
+    toast.success("Entrando como demo…");
     navigate({ to: "/dashboard" });
   };
 
