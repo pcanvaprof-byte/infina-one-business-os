@@ -1111,3 +1111,150 @@ function NewProspectDialog({
     </DialogContent>
   );
 }
+
+function ImportPreviewDialog({
+  rows, fileName, onConfirm, onCancel,
+}: {
+  rows: PreviewRow[];
+  fileName: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const validRows = rows.filter((r) => r.errors.length === 0);
+  const errorRows = rows.filter((r) => r.errors.length > 0);
+  const duplicates = validRows.filter((r) => r.matchId).length;
+  const newOnes = validRows.length - duplicates;
+
+  return (
+    <DialogContent className="max-w-5xl">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <FileSpreadsheet className="h-5 w-5 text-primary-glow" /> Pré-visualização da importação
+        </DialogTitle>
+        <DialogDescription>
+          <span className="font-medium">{fileName}</span> — {rows.length} linha(s) lidas ·{" "}
+          <span className="text-emerald-400">{newOnes} novas</span> ·{" "}
+          <span className="text-amber-300">{duplicates} duplicadas (atualizar campos vazios)</span> ·{" "}
+          <span className="text-rose-400">{errorRows.length} com erro</span>
+        </DialogDescription>
+      </DialogHeader>
+
+      <div className="max-h-[55vh] overflow-auto rounded-md border border-border">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-accent text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+            <tr>
+              <th className="px-2 py-2">Linha</th>
+              <th className="px-2 py-2">Empresa</th>
+              <th className="px-2 py-2">CNPJ</th>
+              <th className="px-2 py-2">Cidade/UF</th>
+              <th className="px-2 py-2">Segmento</th>
+              <th className="px-2 py-2">Contato</th>
+              <th className="px-2 py-2">Situação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.rowIndex} className="border-t border-border/60">
+                <td className="px-2 py-1.5 text-muted-foreground">{r.rowIndex}</td>
+                <td className="px-2 py-1.5 font-medium">{r.data.company || "—"}</td>
+                <td className="px-2 py-1.5">{r.data.cnpj || "—"}</td>
+                <td className="px-2 py-1.5">{r.data.city ? `${r.data.city}/${r.data.state}` : r.data.state || "—"}</td>
+                <td className="px-2 py-1.5">{r.data.segment}</td>
+                <td className="px-2 py-1.5">{r.data.whatsapp || r.data.phone || "—"}</td>
+                <td className="px-2 py-1.5">
+                  {r.errors.length ? (
+                    <span className="rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] text-rose-300">
+                      {r.errors.join(", ")}
+                    </span>
+                  ) : r.matchId ? (
+                    <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
+                      Duplicada
+                    </span>
+                  ) : (
+                    <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+                      Nova
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <DialogFooter>
+        <Button variant="ghost" onClick={onCancel} disabled={submitting}>Cancelar</Button>
+        <Button
+          className="btn-gradient"
+          disabled={submitting || validRows.length === 0}
+          onClick={async () => { setSubmitting(true); await onConfirm(); setSubmitting(false); }}
+        >
+          {submitting ? "Salvando…" : `Confirmar (${validRows.length})`}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
+function ImportHistoryDialog({ open }: { open: boolean }) {
+  const [logs, setLogs] = useState<ImportLog[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    listImports()
+      .then(setLogs)
+      .catch((e) => toast.error(`Erro: ${e.message ?? e}`))
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  return (
+    <DialogContent className="max-w-3xl">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <History className="h-5 w-5 text-primary-glow" /> Histórico de importações
+        </DialogTitle>
+        <DialogDescription>Últimas 50 importações desta conta.</DialogDescription>
+      </DialogHeader>
+      <div className="max-h-[55vh] overflow-auto">
+        {loading ? (
+          <p className="py-8 text-center text-xs text-muted-foreground">Carregando…</p>
+        ) : logs.length === 0 ? (
+          <p className="py-8 text-center text-xs text-muted-foreground">Nenhuma importação ainda.</p>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-2 py-2">Data</th>
+                <th className="px-2 py-2">Arquivo</th>
+                <th className="px-2 py-2">Por</th>
+                <th className="px-2 py-2 text-right">Linhas</th>
+                <th className="px-2 py-2 text-right">Novas</th>
+                <th className="px-2 py-2 text-right">Atualizadas</th>
+                <th className="px-2 py-2 text-right">Ignoradas</th>
+                <th className="px-2 py-2 text-right">Erros</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((l) => (
+                <tr key={l.id} className="border-t border-border/60">
+                  <td className="px-2 py-1.5">{l.createdAt}</td>
+                  <td className="px-2 py-1.5 font-medium">{l.fileName}</td>
+                  <td className="px-2 py-1.5">{l.performedBy}</td>
+                  <td className="px-2 py-1.5 text-right">{l.totalRows}</td>
+                  <td className="px-2 py-1.5 text-right text-emerald-400">{l.inserted}</td>
+                  <td className="px-2 py-1.5 text-right text-amber-300">{l.updated}</td>
+                  <td className="px-2 py-1.5 text-right text-muted-foreground">{l.skipped}</td>
+                  <td className="px-2 py-1.5 text-right text-rose-400">{l.errorCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </DialogContent>
+  );
+}
+
