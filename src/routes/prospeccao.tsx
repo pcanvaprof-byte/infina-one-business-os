@@ -1,5 +1,6 @@
 import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
@@ -72,6 +73,21 @@ import {
   type ProspectPotential,
   type ProspectStatus,
 } from "@/lib/mock-prospects";
+import {
+  loadAllProspects,
+  insertProspect,
+  updateProspect,
+  deleteProspects,
+  addInteractionRemote,
+  applyImport,
+  logImport,
+  listImports,
+  EXPECTED_HEADERS,
+  type PreviewRow,
+  type ImportLog,
+} from "@/lib/prospects-api";
+import { History, FileSpreadsheet } from "lucide-react";
+
 
 export const Route = createFileRoute("/prospeccao")({
   head: () => ({ meta: [{ title: "Prospecção — INFINDA" }] }),
@@ -208,6 +224,7 @@ function ProspeccaoPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [prospects, setProspects] = useState<Prospect[]>(INITIAL_PROSPECTS);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProspectStatus | "all">("all");
   const [segmentFilter, setSegmentFilter] = useState<string>("all");
@@ -221,7 +238,23 @@ function ProspeccaoPage() {
   const [form, setForm] = useState({ ...EMPTY_FORM, owner: user?.name ?? "" });
   const [detailId, setDetailId] = useState<string | null>(null);
 
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
+  const [previewFileName, setPreviewFileName] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    let alive = true;
+    loadAllProspects()
+      .then((rows) => { if (alive) setProspects(rows); })
+      .catch((err) => toast.error(`Falha ao carregar: ${err.message ?? err}`))
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [user]);
+
   if (!user) return <Navigate to="/login" replace />;
+
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -247,14 +280,25 @@ function ProspeccaoPage() {
   const detail = prospects.find((p) => p.id === detailId) ?? null;
 
   const addInteraction = (id: string, kind: InteractionKind, text: string) => {
-    const ix: Interaction = { id: newId("ix"), kind, text, by: user.name, at: "agora" };
+    const tempIx: Interaction = { id: newId("ix"), kind, text, by: user.name, at: "agora" };
     setProspects((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, interactions: [ix, ...(p.interactions ?? [])] } : p)),
+      prev.map((p) => (p.id === id ? { ...p, interactions: [tempIx, ...(p.interactions ?? [])] } : p)),
     );
+    addInteractionRemote(id, kind, text, user.name).then((saved) => {
+      if (!saved) return;
+      setProspects((prev) =>
+        prev.map((p) =>
+          p.id === id
+            ? { ...p, interactions: [saved, ...(p.interactions ?? []).filter((i) => i.id !== tempIx.id)] }
+            : p,
+        ),
+      );
+    });
   };
 
   const updateStatus = (id: string, status: ProspectStatus) => {
     setProspects((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)));
+    updateProspect(id, { status }).catch((e) => toast.error(`Erro: ${e.message ?? e}`));
     addInteraction(id, "status", `Status alterado para "${STATUS_LABEL[status]}"`);
     toast.success(`Status: ${STATUS_LABEL[status]}`);
   };
@@ -262,25 +306,18 @@ function ProspeccaoPage() {
   const removeProspect = (ids: string[]) => {
     setProspects((prev) => prev.filter((p) => !ids.includes(p.id)));
     setSelected(new Set());
-    toast.success(`${ids.length} empresa(s) removida(s)`);
+    deleteProspects(ids)
+      .then(() => toast.success(`${ids.length} empresa(s) removida(s)`))
+      .catch((e) => toast.error(`Erro: ${e.message ?? e}`));
   };
 
   const bulkStatus = (status: ProspectStatus) => {
     const ids = Array.from(selected);
-    setProspects((prev) =>
-      prev.map((p) =>
-        ids.includes(p.id)
-          ? {
-              ...p,
-              status,
-              interactions: [
-                { id: newId("ix"), kind: "status", text: `Status em lote → "${STATUS_LABEL[status]}"`, by: user.name, at: "agora" },
-                ...(p.interactions ?? []),
-              ],
-            }
-          : p,
-      ),
+    setProspects((prev) => prev.map((p) => (ids.includes(p.id) ? { ...p, status } : p)));
+    Promise.all(ids.map((id) => updateProspect(id, { status }))).catch((e) =>
+      toast.error(`Erro: ${e.message ?? e}`),
     );
+    ids.forEach((id) => addInteraction(id, "status", `Status em lote → "${STATUS_LABEL[status]}"`));
     toast.success(`${ids.length} atualizada(s) para ${STATUS_LABEL[status]}`);
     setSelected(new Set());
   };
@@ -288,6 +325,9 @@ function ProspeccaoPage() {
   const bulkAssign = (owner: string) => {
     const ids = Array.from(selected);
     setProspects((prev) => prev.map((p) => (ids.includes(p.id) ? { ...p, owner } : p)));
+    Promise.all(ids.map((id) => updateProspect(id, { owner }))).catch((e) =>
+      toast.error(`Erro: ${e.message ?? e}`),
+    );
     toast.success(`${ids.length} atribuída(s) a ${owner}`);
     setSelected(new Set());
   };
@@ -321,20 +361,30 @@ function ProspeccaoPage() {
   const convertToLead = (p: Prospect) => {
     addInteraction(p.id, "status", "Convertida em Lead no CRM");
     setProspects((prev) => prev.map((x) => (x.id === p.id ? { ...x, status: "qualificado" } : x)));
+    updateProspect(p.id, { status: "qualificado" }).catch((e) =>
+      toast.error(`Erro: ${e.message ?? e}`),
+    );
     toast.success(`${p.company} convertida em lead`);
     setTimeout(() => navigate({ to: "/crm" }), 500);
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!form.company.trim()) return toast.error("Informe o nome da empresa");
-    setProspects((prev) => [
-      { ...form, id: newId(), owner: form.owner || user.name, createdAt: "agora", interactions: [] },
-      ...prev,
-    ]);
-    toast.success("Empresa cadastrada");
-    setForm({ ...EMPTY_FORM, owner: user.name });
-    setDialogOpen(false);
+    try {
+      const saved = await insertProspect({
+        ...form,
+        owner: form.owner || user.name,
+      });
+      setProspects((prev) => [saved, ...prev]);
+      toast.success("Empresa cadastrada");
+      setForm({ ...EMPTY_FORM, owner: user.name });
+      setDialogOpen(false);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Erro: ${msg}`);
+    }
   };
+
 
   const exportCsv = (rows = prospects) => {
     const headers = ["Empresa","Segmento","Responsavel","WhatsApp","Telefone","Email","Instagram","Cidade","Estado","Origem","Potencial","Status"];
@@ -386,15 +436,19 @@ function ProspeccaoPage() {
     const idx = (...needles: string[]) =>
       headers.findIndex((h) => needles.some((n) => h.includes(n)));
 
-    // Mapeamento alinhado à planilha modelo (Nome Fantasia, Telefone, Razão Social, CNPJ,
-    // Atividade Principal - Texto, Municipio, UF, Quadro Societário, etc.)
     const iFantasia = idx("nome fantasia", "fantasia");
     const iRazao = idx("razao social", "razao");
     const iEmpresa = idx("empresa");
     const iCompany = iFantasia >= 0 ? iFantasia : iEmpresa >= 0 ? iEmpresa : iRazao;
-    if (iCompany < 0) return toast.error("Cabeçalho 'Nome Fantasia' / 'Razão Social' / 'Empresa' não encontrado");
+    if (iCompany < 0) {
+      return toast.error(
+        `Cabeçalho não reconhecido. Esperado: ${EXPECTED_HEADERS.join(", ")}`,
+        { duration: 8000 },
+      );
+    }
 
     const f = {
+      cnpj: idx("cnpj"),
       segmento: idx("atividade principal - texto", "atividade principal", "segmento", "setor", "ramo", "atividade"),
       responsavel: idx("respons", "consultor", "owner", "quadro societ"),
       whatsapp: idx("whatsapp", "whats", "celular"),
@@ -407,18 +461,16 @@ function ProspeccaoPage() {
       potencial: idx("potencial", "score", "porte"),
     };
 
-    const novos: Prospect[] = [];
+    const previews: PreviewRow[] = [];
     for (let i = 1; i < rows.length; i++) {
       const c = rows[i];
       const fantasia = iFantasia >= 0 ? c[iFantasia] : "";
       const razao = iRazao >= 0 ? c[iRazao] : "";
       const rawCompany = (fantasia || razao || c[iCompany] || "").trim();
-      if (!rawCompany) continue;
-      const company = toTitleCase(rawCompany);
+      const errors: string[] = [];
 
       const telRaw = f.telefone >= 0 ? c[f.telefone] || "" : "";
       const waRaw = f.whatsapp >= 0 ? c[f.whatsapp] || "" : "";
-      // Quando só há "Telefone": números móveis (DDD + 9...) viram WhatsApp
       let whatsapp = formatBrPhone(waRaw);
       let phone = formatBrPhone(telRaw);
       if (!whatsapp && telRaw && isMobile(telRaw)) { whatsapp = phone; phone = ""; }
@@ -429,30 +481,71 @@ function ProspeccaoPage() {
 
       const segRaw = f.segmento >= 0 ? (c[f.segmento] || "").trim() : "";
       const pot = (f.potencial >= 0 ? (c[f.potencial] || "").toLowerCase() : "") as ProspectPotential;
+      const cnpjRaw = f.cnpj >= 0 ? onlyDigits(c[f.cnpj] || "") : "";
 
-      novos.push({
-        id: newId(),
-        company,
-        segment: segRaw ? segRaw.charAt(0).toUpperCase() + segRaw.slice(1).toLowerCase() : "Outros",
-        owner: (f.responsavel >= 0 ? c[f.responsavel] : "") || user.name,
-        whatsapp,
-        phone,
-        email: f.email >= 0 ? c[f.email] || "" : "",
-        instagram: f.instagram >= 0 ? c[f.instagram] || "" : "",
-        city: city ? toTitleCase(city) : "",
-        state,
-        source: (f.origem >= 0 ? c[f.origem] : "") || "Importação",
-        potential: POTENTIALS.includes(pot) ? pot : "medio",
-        status: "nao_contatado",
-        createdAt: "importado",
-        interactions: [],
+      if (!rawCompany) errors.push("Empresa vazia");
+
+      previews.push({
+        rowIndex: i + 1,
+        errors,
+        data: {
+          company: rawCompany ? toTitleCase(rawCompany) : "",
+          cnpj: cnpjRaw || undefined,
+          segment: segRaw ? segRaw.charAt(0).toUpperCase() + segRaw.slice(1).toLowerCase() : "Outros",
+          owner: (f.responsavel >= 0 ? c[f.responsavel] : "") || user.name,
+          whatsapp,
+          phone,
+          email: f.email >= 0 ? c[f.email] || "" : "",
+          instagram: f.instagram >= 0 ? c[f.instagram] || "" : "",
+          city: city ? toTitleCase(city) : "",
+          state,
+          source: (f.origem >= 0 ? c[f.origem] : "") || "Importação",
+          potential: POTENTIALS.includes(pot) ? pot : "medio",
+          status: "nao_contatado",
+        },
       });
     }
 
-    if (!novos.length) return toast.error("Nenhuma linha válida");
-    setProspects((prev) => [...novos, ...prev]);
-    toast.success(`${novos.length} empresa(s) importada(s)`);
+    // mark duplicates by CNPJ
+    const byCnpj = new Map<string, Prospect>();
+    for (const p of prospects) if (p.cnpj) byCnpj.set(p.cnpj, p);
+    for (const r of previews) {
+      if (r.data.cnpj) {
+        const m = byCnpj.get(r.data.cnpj);
+        if (m) r.matchId = m.id;
+      }
+    }
+
+    if (!previews.length) return toast.error("Nenhuma linha válida");
+    setPreviewRows(previews);
+    setPreviewFileName(file.name);
+    setPreviewOpen(true);
   };
+
+  const confirmImport = async () => {
+    try {
+      const result = await applyImport(previewRows, prospects);
+      await logImport({
+        fileName: previewFileName,
+        performedBy: user.name,
+        totalRows: previewRows.length,
+        result,
+      });
+      const fresh = await loadAllProspects();
+      setProspects(fresh);
+      setPreviewOpen(false);
+      setPreviewRows([]);
+      toast.success(
+        `Importação: ${result.inserted} novas, ${result.updated} atualizadas, ${result.skipped} ignoradas`,
+        { duration: 6000 },
+      );
+      if (result.errors.length) toast.error(`${result.errors.length} erro(s) registrados`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Erro: ${msg}`);
+    }
+  };
+
 
   const clearFilters = () => {
     setStatusFilter("all"); setSegmentFilter("all"); setStateFilter("all"); setPotentialFilter("all"); setSearch("");
@@ -472,6 +565,9 @@ function ProspeccaoPage() {
           <Button variant="outline" className="h-9 text-xs" onClick={() => fileRef.current?.click()}>
             <Upload className="mr-1.5 h-4 w-4" /> Importar
           </Button>
+          <Button variant="outline" className="h-9 text-xs" onClick={() => setHistoryOpen(true)}>
+            <History className="mr-1.5 h-4 w-4" /> Histórico
+          </Button>
           <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,text/csv" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); e.target.value = ""; }} />
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -482,6 +578,7 @@ function ProspeccaoPage() {
             </DialogTrigger>
             <NewProspectDialog form={form} setForm={setForm} onCreate={handleCreate} />
           </Dialog>
+
         </div>
       }
     >
@@ -688,7 +785,29 @@ function ProspeccaoPage() {
           />
         )}
       </Dialog>
+
+      {/* Import preview */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <ImportPreviewDialog
+          rows={previewRows}
+          fileName={previewFileName}
+          onConfirm={confirmImport}
+          onCancel={() => { setPreviewOpen(false); setPreviewRows([]); }}
+        />
+      </Dialog>
+
+      {/* Import history */}
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <ImportHistoryDialog open={historyOpen} />
+      </Dialog>
+
+      {loading && (
+        <div className="pointer-events-none fixed bottom-4 right-4 rounded-md bg-card/90 px-3 py-1.5 text-[11px] text-muted-foreground shadow">
+          Carregando…
+        </div>
+      )}
     </AppShell>
+
   );
 }
 
@@ -992,3 +1111,150 @@ function NewProspectDialog({
     </DialogContent>
   );
 }
+
+function ImportPreviewDialog({
+  rows, fileName, onConfirm, onCancel,
+}: {
+  rows: PreviewRow[];
+  fileName: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const validRows = rows.filter((r) => r.errors.length === 0);
+  const errorRows = rows.filter((r) => r.errors.length > 0);
+  const duplicates = validRows.filter((r) => r.matchId).length;
+  const newOnes = validRows.length - duplicates;
+
+  return (
+    <DialogContent className="max-w-5xl">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <FileSpreadsheet className="h-5 w-5 text-primary-glow" /> Pré-visualização da importação
+        </DialogTitle>
+        <DialogDescription>
+          <span className="font-medium">{fileName}</span> — {rows.length} linha(s) lidas ·{" "}
+          <span className="text-emerald-400">{newOnes} novas</span> ·{" "}
+          <span className="text-amber-300">{duplicates} duplicadas (atualizar campos vazios)</span> ·{" "}
+          <span className="text-rose-400">{errorRows.length} com erro</span>
+        </DialogDescription>
+      </DialogHeader>
+
+      <div className="max-h-[55vh] overflow-auto rounded-md border border-border">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-accent text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+            <tr>
+              <th className="px-2 py-2">Linha</th>
+              <th className="px-2 py-2">Empresa</th>
+              <th className="px-2 py-2">CNPJ</th>
+              <th className="px-2 py-2">Cidade/UF</th>
+              <th className="px-2 py-2">Segmento</th>
+              <th className="px-2 py-2">Contato</th>
+              <th className="px-2 py-2">Situação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.rowIndex} className="border-t border-border/60">
+                <td className="px-2 py-1.5 text-muted-foreground">{r.rowIndex}</td>
+                <td className="px-2 py-1.5 font-medium">{r.data.company || "—"}</td>
+                <td className="px-2 py-1.5">{r.data.cnpj || "—"}</td>
+                <td className="px-2 py-1.5">{r.data.city ? `${r.data.city}/${r.data.state}` : r.data.state || "—"}</td>
+                <td className="px-2 py-1.5">{r.data.segment}</td>
+                <td className="px-2 py-1.5">{r.data.whatsapp || r.data.phone || "—"}</td>
+                <td className="px-2 py-1.5">
+                  {r.errors.length ? (
+                    <span className="rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] text-rose-300">
+                      {r.errors.join(", ")}
+                    </span>
+                  ) : r.matchId ? (
+                    <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
+                      Duplicada
+                    </span>
+                  ) : (
+                    <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+                      Nova
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <DialogFooter>
+        <Button variant="ghost" onClick={onCancel} disabled={submitting}>Cancelar</Button>
+        <Button
+          className="btn-gradient"
+          disabled={submitting || validRows.length === 0}
+          onClick={async () => { setSubmitting(true); await onConfirm(); setSubmitting(false); }}
+        >
+          {submitting ? "Salvando…" : `Confirmar (${validRows.length})`}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
+function ImportHistoryDialog({ open }: { open: boolean }) {
+  const [logs, setLogs] = useState<ImportLog[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    listImports()
+      .then(setLogs)
+      .catch((e) => toast.error(`Erro: ${e.message ?? e}`))
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  return (
+    <DialogContent className="max-w-3xl">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <History className="h-5 w-5 text-primary-glow" /> Histórico de importações
+        </DialogTitle>
+        <DialogDescription>Últimas 50 importações desta conta.</DialogDescription>
+      </DialogHeader>
+      <div className="max-h-[55vh] overflow-auto">
+        {loading ? (
+          <p className="py-8 text-center text-xs text-muted-foreground">Carregando…</p>
+        ) : logs.length === 0 ? (
+          <p className="py-8 text-center text-xs text-muted-foreground">Nenhuma importação ainda.</p>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-2 py-2">Data</th>
+                <th className="px-2 py-2">Arquivo</th>
+                <th className="px-2 py-2">Por</th>
+                <th className="px-2 py-2 text-right">Linhas</th>
+                <th className="px-2 py-2 text-right">Novas</th>
+                <th className="px-2 py-2 text-right">Atualizadas</th>
+                <th className="px-2 py-2 text-right">Ignoradas</th>
+                <th className="px-2 py-2 text-right">Erros</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((l) => (
+                <tr key={l.id} className="border-t border-border/60">
+                  <td className="px-2 py-1.5">{l.createdAt}</td>
+                  <td className="px-2 py-1.5 font-medium">{l.fileName}</td>
+                  <td className="px-2 py-1.5">{l.performedBy}</td>
+                  <td className="px-2 py-1.5 text-right">{l.totalRows}</td>
+                  <td className="px-2 py-1.5 text-right text-emerald-400">{l.inserted}</td>
+                  <td className="px-2 py-1.5 text-right text-amber-300">{l.updated}</td>
+                  <td className="px-2 py-1.5 text-right text-muted-foreground">{l.skipped}</td>
+                  <td className="px-2 py-1.5 text-right text-rose-400">{l.errorCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </DialogContent>
+  );
+}
+
