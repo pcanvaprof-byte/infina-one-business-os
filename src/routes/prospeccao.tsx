@@ -73,6 +73,21 @@ import {
   type ProspectPotential,
   type ProspectStatus,
 } from "@/lib/mock-prospects";
+import {
+  loadAllProspects,
+  insertProspect,
+  updateProspect,
+  deleteProspects,
+  addInteractionRemote,
+  applyImport,
+  logImport,
+  listImports,
+  EXPECTED_HEADERS,
+  type PreviewRow,
+  type ImportLog,
+} from "@/lib/prospects-api";
+import { History, FileSpreadsheet } from "lucide-react";
+
 
 export const Route = createFileRoute("/prospeccao")({
   head: () => ({ meta: [{ title: "Prospecção — INFINDA" }] }),
