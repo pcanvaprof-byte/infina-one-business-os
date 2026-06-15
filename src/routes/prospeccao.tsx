@@ -785,7 +785,29 @@ function ProspeccaoPage() {
           />
         )}
       </Dialog>
+
+      {/* Import preview */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <ImportPreviewDialog
+          rows={previewRows}
+          fileName={previewFileName}
+          onConfirm={confirmImport}
+          onCancel={() => { setPreviewOpen(false); setPreviewRows([]); }}
+        />
+      </Dialog>
+
+      {/* Import history */}
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <ImportHistoryDialog open={historyOpen} />
+      </Dialog>
+
+      {loading && (
+        <div className="pointer-events-none fixed bottom-4 right-4 rounded-md bg-card/90 px-3 py-1.5 text-[11px] text-muted-foreground shadow">
+          Carregando…
+        </div>
+      )}
     </AppShell>
+
   );
 }
 
