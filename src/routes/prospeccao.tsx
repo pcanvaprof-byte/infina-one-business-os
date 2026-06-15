@@ -307,32 +307,46 @@ function ProspeccaoPage() {
       }
       out.push(cur); return out.map((s) => s.trim());
     };
-    const headers = parseLine(lines[0]).map((h) => h.toLowerCase());
-    const idx = (n: string) => headers.findIndex((h) => h.includes(n));
-    const iEmpresa = idx("empresa");
+    const headers = parseLine(lines[0]).map((h) =>
+      h.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+    );
+    const idx = (...needles: string[]) =>
+      headers.findIndex((h) => needles.some((n) => h.includes(n)));
+    const iEmpresa = idx("empresa", "razao", "nome fantasia");
     if (iEmpresa < 0) return toast.error("Cabeçalho 'Empresa' não encontrado");
     const f = {
-      segmento: idx("segmento"), responsavel: idx("respons"), whatsapp: idx("whats"),
-      telefone: idx("telefone"), email: idx("email"), instagram: idx("instagram"),
-      cidade: idx("cidade"), estado: idx("estado"), origem: idx("origem"), potencial: idx("potencial"),
+      segmento: idx("segmento", "setor", "ramo"),
+      responsavel: idx("respons", "consultor", "owner"),
+      whatsapp: idx("whats", "celular"),
+      telefone: idx("telefone", "fone", "fixo"),
+      email: idx("email", "e-mail"),
+      instagram: idx("instagram", "insta", "@"),
+      cidade: idx("cidade", "municipio"),
+      estado: idx("estado", "uf"),
+      origem: idx("origem", "fonte"),
+      potencial: idx("potencial", "score"),
     };
     const novos: Prospect[] = [];
     for (let i = 1; i < lines.length; i++) {
       const c = parseLine(lines[i]);
       const company = c[iEmpresa]; if (!company) continue;
       const pot = (c[f.potencial] || "medio").toLowerCase() as ProspectPotential;
+      const cidadeRaw = (c[f.cidade] || "").trim();
+      const estadoRaw = (c[f.estado] || "").trim();
+      const { city, state } = parseLocation(cidadeRaw, estadoRaw);
       novos.push({
         id: newId(), company,
         segment: c[f.segmento] || "Outros",
         owner: c[f.responsavel] || user.name,
         whatsapp: c[f.whatsapp] || "", phone: c[f.telefone] || "",
         email: c[f.email] || "", instagram: c[f.instagram] || "",
-        city: c[f.cidade] || "", state: (c[f.estado] || "SP").toUpperCase().slice(0, 2),
+        city, state,
         source: c[f.origem] || "Importação",
         potential: POTENTIALS.includes(pot) ? pot : "medio",
         status: "nao_contatado", createdAt: "importado", interactions: [],
       });
     }
+
     if (!novos.length) return toast.error("Nenhuma linha válida");
     setProspects((prev) => [...novos, ...prev]);
     toast.success(`${novos.length} empresa(s) importada(s)`);
