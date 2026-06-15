@@ -1,20 +1,12 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useAuth, type Role, ROLE_LABEL } from "@/lib/auth-context";
+import { useAuth, SEED_ACCOUNTS } from "@/lib/auth-context";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { toast } from "sonner";
-import { Sparkles, ShieldCheck, BarChart3 } from "lucide-react";
+import { Sparkles, ShieldCheck, BarChart3, ShieldUser, UserRound } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -27,44 +19,36 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const { login } = useAuth();
+  const { login, loginAs } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [role, setRole] = useState<Role>("consultor");
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    login(email || "demo@infinda.com", "Demo User", role);
+    const res = login(email, password);
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
     toast.success("Bem-vindo de volta!");
     navigate({ to: "/dashboard" });
   };
 
-  const handleSignup = (e: React.FormEvent) => {
-    e.preventDefault();
-    login(email || "demo@infinda.com", name || "Demo User", role);
-    toast.success("Conta criada com sucesso!");
-    navigate({ to: "/dashboard" });
-  };
-
-  const handleDemo = () => {
-    login("demo@infinda.com", "Demo User", role);
-    toast.success("Entrando como demo…");
+  const quickLogin = (idx: number) => {
+    const a = SEED_ACCOUNTS[idx];
+    loginAs({ name: a.name, email: a.email, role: a.role });
+    toast.success(`Entrando como ${a.name}…`);
     navigate({ to: "/dashboard" });
   };
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
-      {/* Brand panel */}
-      <div className="relative hidden overflow-hidden border-r border-border lg:flex lg:flex-col lg:justify-between lg:p-10"
+      <div
+        className="relative hidden overflow-hidden border-r border-border lg:flex lg:flex-col lg:justify-between lg:p-10"
         style={{ background: "var(--gradient-surface)" }}
       >
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{ background: "var(--gradient-glow)" }}
-        />
+        <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: "var(--gradient-glow)" }} />
         <div className="relative">
           <Logo size={40} />
         </div>
@@ -96,115 +80,85 @@ function LoginPage() {
         </p>
       </div>
 
-      {/* Form panel */}
       <div className="flex items-center justify-center p-6 sm:p-10">
         <div className="w-full max-w-sm">
           <div className="mb-8 lg:hidden">
             <Logo size={36} />
           </div>
 
-          <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">Entrar</TabsTrigger>
-              <TabsTrigger value="signup">Criar conta</TabsTrigger>
-            </TabsList>
+          <h1 className="text-2xl font-bold">Acesse sua conta</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Entre com seu email e senha para continuar.
+          </p>
 
-            <TabsContent value="login" className="mt-6">
-              <h1 className="text-2xl font-bold">Acesse sua conta</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Entre para continuar gerenciando suas vendas.
-              </p>
-              <form onSubmit={handleLogin} className="mt-6 space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="voce@empresa.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="password">Senha</Label>
-                    <Link to="/login" className="text-xs text-muted-foreground hover:text-foreground">
-                      Esqueci minha senha
-                    </Link>
-                  </div>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Perfil de acesso</Label>
-                  <Select value={role} onValueChange={(v) => setRole(v as Role)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
-                        <SelectItem key={r} value={r}>
-                          {ROLE_LABEL[r]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button type="submit" className="btn-gradient h-11 w-full text-sm font-semibold">
-                  Entrar na plataforma
-                </Button>
-                <Button type="button" variant="outline" onClick={handleDemo} className="h-11 w-full text-sm font-semibold">
-                  Entrar como demo (sem senha)
-                </Button>
-                <p className="text-center text-xs text-muted-foreground">
-                  Versão demo · email e senha são opcionais
-                </p>
+          <form onSubmit={handleLogin} className="mt-6 space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="voce@infinda.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="password">Senha</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            <Button type="submit" className="btn-gradient h-11 w-full text-sm font-semibold">
+              Entrar na plataforma
+            </Button>
+          </form>
 
-              </form>
-            </TabsContent>
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center">
+              <span className="bg-background px-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+                Acesso rápido (MVP)
+              </span>
+            </div>
+          </div>
 
-            <TabsContent value="signup" className="mt-6">
-              <h1 className="text-2xl font-bold">Crie sua conta</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Comece a usar o INFINDA em segundos.
-              </p>
-              <form onSubmit={handleSignup} className="mt-6 space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="name">Nome completo</Label>
-                  <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Seu nome" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="email-s">Email</Label>
-                  <Input id="email-s" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@empresa.com" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="password-s">Senha</Label>
-                  <Input id="password-s" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Perfil de acesso</Label>
-                  <Select value={role} onValueChange={(v) => setRole(v as Role)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
-                        <SelectItem key={r} value={r}>{ROLE_LABEL[r]}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button type="submit" className="btn-gradient h-11 w-full text-sm font-semibold">
-                  Criar conta
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
+          <div className="grid grid-cols-1 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 justify-start gap-3 text-sm"
+              onClick={() => quickLogin(0)}
+            >
+              <ShieldUser className="h-4 w-4 text-primary-glow" />
+              <div className="flex flex-col items-start leading-tight">
+                <span className="font-semibold">Danielly</span>
+                <span className="text-[11px] text-muted-foreground">Administradora</span>
+              </div>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 justify-start gap-3 text-sm"
+              onClick={() => quickLogin(1)}
+            >
+              <UserRound className="h-4 w-4 text-primary-glow" />
+              <div className="flex flex-col items-start leading-tight">
+                <span className="font-semibold">Valdinei</span>
+                <span className="text-[11px] text-muted-foreground">Consultor Comercial</span>
+              </div>
+            </Button>
+          </div>
+
+          <p className="mt-6 text-center text-[11px] text-muted-foreground">
+            Credenciais: <span className="font-mono">danielly@infinda.com / danielly123</span> ·{" "}
+            <span className="font-mono">valdinei@infinda.com / valdinei123</span>
+          </p>
         </div>
       </div>
     </div>
