@@ -11,6 +11,7 @@ export type ProspectPotential = "alto" | "medio" | "baixo";
 export interface Prospect {
   id: string;
   company: string;
+  cnpj?: string;
   segment: string;
   owner: string;
   whatsapp: string;
