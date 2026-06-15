@@ -23,6 +23,23 @@ export interface Prospect {
   potential: ProspectPotential;
   status: ProspectStatus;
   createdAt: string;
+  interactions?: Interaction[];
+}
+
+export type InteractionKind =
+  | "whatsapp"
+  | "ligacao"
+  | "email"
+  | "reuniao"
+  | "nota"
+  | "status";
+
+export interface Interaction {
+  id: string;
+  kind: InteractionKind;
+  text: string;
+  by: string;
+  at: string;
 }
 
 export const STATUS_LABEL: Record<ProspectStatus, string> = {
