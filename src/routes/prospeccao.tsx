@@ -224,6 +224,7 @@ function ProspeccaoPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [prospects, setProspects] = useState<Prospect[]>(INITIAL_PROSPECTS);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProspectStatus | "all">("all");
   const [segmentFilter, setSegmentFilter] = useState<string>("all");
@@ -237,7 +238,23 @@ function ProspeccaoPage() {
   const [form, setForm] = useState({ ...EMPTY_FORM, owner: user?.name ?? "" });
   const [detailId, setDetailId] = useState<string | null>(null);
 
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
+  const [previewFileName, setPreviewFileName] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    let alive = true;
+    loadAllProspects()
+      .then((rows) => { if (alive) setProspects(rows); })
+      .catch((err) => toast.error(`Falha ao carregar: ${err.message ?? err}`))
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [user]);
+
   if (!user) return <Navigate to="/login" replace />;
+
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
