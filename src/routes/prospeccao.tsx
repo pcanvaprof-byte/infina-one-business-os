@@ -280,14 +280,25 @@ function ProspeccaoPage() {
   const detail = prospects.find((p) => p.id === detailId) ?? null;
 
   const addInteraction = (id: string, kind: InteractionKind, text: string) => {
-    const ix: Interaction = { id: newId("ix"), kind, text, by: user.name, at: "agora" };
+    const tempIx: Interaction = { id: newId("ix"), kind, text, by: user.name, at: "agora" };
     setProspects((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, interactions: [ix, ...(p.interactions ?? [])] } : p)),
+      prev.map((p) => (p.id === id ? { ...p, interactions: [tempIx, ...(p.interactions ?? [])] } : p)),
     );
+    addInteractionRemote(id, kind, text, user.name).then((saved) => {
+      if (!saved) return;
+      setProspects((prev) =>
+        prev.map((p) =>
+          p.id === id
+            ? { ...p, interactions: [saved, ...(p.interactions ?? []).filter((i) => i.id !== tempIx.id)] }
+            : p,
+        ),
+      );
+    });
   };
 
   const updateStatus = (id: string, status: ProspectStatus) => {
     setProspects((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)));
+    updateProspect(id, { status }).catch((e) => toast.error(`Erro: ${e.message ?? e}`));
     addInteraction(id, "status", `Status alterado para "${STATUS_LABEL[status]}"`);
     toast.success(`Status: ${STATUS_LABEL[status]}`);
   };
@@ -295,25 +306,18 @@ function ProspeccaoPage() {
   const removeProspect = (ids: string[]) => {
     setProspects((prev) => prev.filter((p) => !ids.includes(p.id)));
     setSelected(new Set());
-    toast.success(`${ids.length} empresa(s) removida(s)`);
+    deleteProspects(ids)
+      .then(() => toast.success(`${ids.length} empresa(s) removida(s)`))
+      .catch((e) => toast.error(`Erro: ${e.message ?? e}`));
   };
 
   const bulkStatus = (status: ProspectStatus) => {
     const ids = Array.from(selected);
-    setProspects((prev) =>
-      prev.map((p) =>
-        ids.includes(p.id)
-          ? {
-              ...p,
-              status,
-              interactions: [
-                { id: newId("ix"), kind: "status", text: `Status em lote → "${STATUS_LABEL[status]}"`, by: user.name, at: "agora" },
-                ...(p.interactions ?? []),
-              ],
-            }
-          : p,
-      ),
+    setProspects((prev) => prev.map((p) => (ids.includes(p.id) ? { ...p, status } : p)));
+    Promise.all(ids.map((id) => updateProspect(id, { status }))).catch((e) =>
+      toast.error(`Erro: ${e.message ?? e}`),
     );
+    ids.forEach((id) => addInteraction(id, "status", `Status em lote → "${STATUS_LABEL[status]}"`));
     toast.success(`${ids.length} atualizada(s) para ${STATUS_LABEL[status]}`);
     setSelected(new Set());
   };
@@ -321,6 +325,9 @@ function ProspeccaoPage() {
   const bulkAssign = (owner: string) => {
     const ids = Array.from(selected);
     setProspects((prev) => prev.map((p) => (ids.includes(p.id) ? { ...p, owner } : p)));
+    Promise.all(ids.map((id) => updateProspect(id, { owner }))).catch((e) =>
+      toast.error(`Erro: ${e.message ?? e}`),
+    );
     toast.success(`${ids.length} atribuída(s) a ${owner}`);
     setSelected(new Set());
   };
@@ -354,20 +361,30 @@ function ProspeccaoPage() {
   const convertToLead = (p: Prospect) => {
     addInteraction(p.id, "status", "Convertida em Lead no CRM");
     setProspects((prev) => prev.map((x) => (x.id === p.id ? { ...x, status: "qualificado" } : x)));
+    updateProspect(p.id, { status: "qualificado" }).catch((e) =>
+      toast.error(`Erro: ${e.message ?? e}`),
+    );
     toast.success(`${p.company} convertida em lead`);
     setTimeout(() => navigate({ to: "/crm" }), 500);
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!form.company.trim()) return toast.error("Informe o nome da empresa");
-    setProspects((prev) => [
-      { ...form, id: newId(), owner: form.owner || user.name, createdAt: "agora", interactions: [] },
-      ...prev,
-    ]);
-    toast.success("Empresa cadastrada");
-    setForm({ ...EMPTY_FORM, owner: user.name });
-    setDialogOpen(false);
+    try {
+      const saved = await insertProspect({
+        ...form,
+        owner: form.owner || user.name,
+      });
+      setProspects((prev) => [saved, ...prev]);
+      toast.success("Empresa cadastrada");
+      setForm({ ...EMPTY_FORM, owner: user.name });
+      setDialogOpen(false);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Erro: ${msg}`);
+    }
   };
+
 
   const exportCsv = (rows = prospects) => {
     const headers = ["Empresa","Segmento","Responsavel","WhatsApp","Telefone","Email","Instagram","Cidade","Estado","Origem","Potencial","Status"];
