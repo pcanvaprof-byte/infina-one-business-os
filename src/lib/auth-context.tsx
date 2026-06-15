@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
-export type Role = "admin" | "gestor" | "sdr" | "consultor";
+export type Role = "admin" | "consultor";
 
 export interface MockUser {
   name: string;
@@ -8,9 +8,30 @@ export interface MockUser {
   role: Role;
 }
 
+export interface AccountSeed extends MockUser {
+  password: string;
+}
+
+// MVP: contas pré-cadastradas diretamente na ferramenta
+export const SEED_ACCOUNTS: AccountSeed[] = [
+  {
+    name: "Danielly",
+    email: "danielly@infinda.com",
+    password: "danielly123",
+    role: "admin",
+  },
+  {
+    name: "Valdinei",
+    email: "valdinei@infinda.com",
+    password: "valdinei123",
+    role: "consultor",
+  },
+];
+
 interface AuthCtx {
   user: MockUser | null;
-  login: (email: string, name?: string, role?: Role) => void;
+  login: (email: string, password: string) => { ok: true } | { ok: false; error: string };
+  loginAs: (user: MockUser) => void;
   logout: () => void;
 }
 
@@ -29,12 +50,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login: AuthCtx["login"] = (email, name, role) => {
-    const u: MockUser = {
-      email,
-      name: name || email.split("@")[0].replace(/\b\w/g, (c) => c.toUpperCase()),
-      role: role || "consultor",
-    };
+  const login: AuthCtx["login"] = (email, password) => {
+    const e = email.trim().toLowerCase();
+    const found = SEED_ACCOUNTS.find(
+      (a) => a.email.toLowerCase() === e && a.password === password,
+    );
+    if (!found) return { ok: false, error: "Email ou senha inválidos." };
+    const u: MockUser = { name: found.name, email: found.email, role: found.role };
+    localStorage.setItem(KEY, JSON.stringify(u));
+    setUser(u);
+    return { ok: true };
+  };
+
+  const loginAs: AuthCtx["loginAs"] = (u) => {
     localStorage.setItem(KEY, JSON.stringify(u));
     setUser(u);
   };
@@ -44,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
-  return <Ctx.Provider value={{ user, login, logout }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, login, loginAs, logout }}>{children}</Ctx.Provider>;
 }
 
 export function useAuth() {
@@ -55,7 +83,5 @@ export function useAuth() {
 
 export const ROLE_LABEL: Record<Role, string> = {
   admin: "Administrador",
-  gestor: "Gestor",
-  sdr: "SDR",
   consultor: "Consultor Comercial",
 };
