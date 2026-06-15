@@ -125,6 +125,21 @@ function isMobile(raw: string): boolean {
 function toTitleCase(s: string): string {
   return s.toLowerCase().replace(/(^|\s|[\/\-])([a-zà-ú])/g, (_, p, c) => p + c.toUpperCase());
 }
+function cleanOwner(raw: string): string {
+  if (!raw) return "";
+  // Pega só o primeiro sócio (antes de ';'), remove CPF mascarado "***123456**" e cargo após "**"
+  const first = raw.split(";")[0] ?? raw;
+  const name = first.replace(/\*+\d*\*+.*$/g, "").replace(/\s+/g, " ").trim();
+  return name ? toTitleCase(name) : "";
+}
+function porteToPotential(raw: string): ProspectPotential | null {
+  const v = raw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (!v) return null;
+  if (v.includes("micro")) return "baixo";
+  if (v.includes("pequeno")) return "medio";
+  if (v.includes("medio") || v.includes("demais") || v.includes("grande")) return "alto";
+  return null;
+}
 
 const UF_NAME_TO_CODE: Record<string, string> = {
   acre: "AC", alagoas: "AL", amapa: "AP", amazonas: "AM", bahia: "BA",
